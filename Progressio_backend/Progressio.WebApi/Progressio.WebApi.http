@@ -1,0 +1,6 @@
+@Progressio.WebApi_HostAddress = http://localhost:5193
+
+GET {{Progressio.WebApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
