@@ -1,0 +1,116 @@
+# ============================================================
+#  PROGRESSIO — .gitignore
+#  Stack: .NET 9 / ASP.NET Core · Flutter · Docker · SQL Server
+# ============================================================
+
+# ---------------------------
+# Secrets & Environment
+# ---------------------------
+.env
+.env.*
+!.env.example
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+
+# ---------------------------
+# .NET / Visual Studio
+# ---------------------------
+## Build output
+bin/
+obj/
+out/
+
+## VS solution user files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.rsuser
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Rider
+.idea/
+
+## Publish profiles
+PublishProfiles/
+publish/
+
+## EF Core migrations snapshots (keep Migrations/ folder, ignore these)
+# Uncomment if you don't want to commit migrations:
+# **/Migrations/
+
+## Test results
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## Log files
+*.log
+Logs/
+
+# ---------------------------
+# Flutter / Dart
+# ---------------------------
+## Build
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+## Generated
+*.g.dart
+*.freezed.dart
+*.gr.dart
+
+## Android
+**/android/.gradle/
+**/android/local.properties
+**/android/key.properties
+**/android/app/google-services.json
+**/android/captures/
+
+## iOS (if ever needed)
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/flutter_export_environment.sh
+
+## Windows desktop
+**/windows/flutter/ephemeral/
+
+## VS Code (Flutter dev)
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json.example
+
+# ---------------------------
+# Docker
+# ---------------------------
+# Never commit real compose overrides with secrets
+docker-compose.override.yml
+
+# ---------------------------
+# OS generated
+# ---------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ---------------------------
+# Misc
+# ---------------------------
+*.bak
+*.tmp
+*.swp
+*~
