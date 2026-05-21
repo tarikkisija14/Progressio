@@ -7,7 +7,6 @@ using Progressio.Services.Database.Entities;
 using Progressio.Services.Services;
 using Progressio.Services.Services.Validators;
 using Progressio.WebApi.Middleware;
-using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,17 +25,70 @@ builder.Services.AddIdentity<AppUser, IdentityRole<int>>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
-// Validators
+// ─── Validators ──────────────────────────────────────────────────────────────
+// Content
 builder.Services.AddScoped<IValidator<ContentInsertRequest>, ContentInsertValidator>();
 builder.Services.AddScoped<IValidator<ContentUpdateRequest>, ContentUpdateValidator>();
 
-// Services
+// Genre
+builder.Services.AddScoped<IValidator<GenreInsertRequest>, GenreInsertValidator>();
+builder.Services.AddScoped<IValidator<GenreUpdateRequest>, GenreUpdateValidator>();
+
+// ContentType
+builder.Services.AddScoped<IValidator<ContentTypeInsertRequest>, ContentTypeInsertValidator>();
+builder.Services.AddScoped<IValidator<ContentTypeUpdateRequest>, ContentTypeUpdateValidator>();
+
+// AgeRating
+builder.Services.AddScoped<IValidator<AgeRatingInsertRequest>, AgeRatingInsertValidator>();
+builder.Services.AddScoped<IValidator<AgeRatingUpdateRequest>, AgeRatingUpdateValidator>();
+
+// Language
+builder.Services.AddScoped<IValidator<LanguageInsertRequest>, LanguageInsertValidator>();
+builder.Services.AddScoped<IValidator<LanguageUpdateRequest>, LanguageUpdateValidator>();
+
+// Platform
+builder.Services.AddScoped<IValidator<PlatformInsertRequest>, PlatformInsertValidator>();
+builder.Services.AddScoped<IValidator<PlatformUpdateRequest>, PlatformUpdateValidator>();
+
+// Country
+builder.Services.AddScoped<IValidator<CountryInsertRequest>, CountryInsertValidator>();
+builder.Services.AddScoped<IValidator<CountryUpdateRequest>, CountryUpdateValidator>();
+
+// City
+builder.Services.AddScoped<IValidator<CityInsertRequest>, CityInsertValidator>();
+builder.Services.AddScoped<IValidator<CityUpdateRequest>, CityUpdateValidator>();
+
+// Season
+builder.Services.AddScoped<IValidator<SeasonInsertRequest>, SeasonInsertValidator>();
+builder.Services.AddScoped<IValidator<SeasonUpdateRequest>, SeasonUpdateValidator>();
+
+// Episode
+builder.Services.AddScoped<IValidator<EpisodeInsertRequest>, EpisodeInsertValidator>();
+builder.Services.AddScoped<IValidator<EpisodeUpdateRequest>, EpisodeUpdateValidator>();
+
+// Chapter
+builder.Services.AddScoped<IValidator<ChapterInsertRequest>, ChapterInsertValidator>();
+builder.Services.AddScoped<IValidator<ChapterUpdateRequest>, ChapterUpdateValidator>();
+
+// Character
+builder.Services.AddScoped<IValidator<CharacterInsertRequest>, CharacterInsertValidator>();
+builder.Services.AddScoped<IValidator<CharacterUpdateRequest>, CharacterUpdateValidator>();
+
+// ─── Services ─────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IContentService, ContentService>();
-
-
+builder.Services.AddScoped<IGenreService, GenreService>();
+builder.Services.AddScoped<IContentTypeService, ContentTypeService>();
+builder.Services.AddScoped<IAgeRatingService, AgeRatingService>();
+builder.Services.AddScoped<ILanguageService, LanguageService>();
+builder.Services.AddScoped<IPlatformService, PlatformService>();
+builder.Services.AddScoped<ICountryService, CountryService>();
+builder.Services.AddScoped<ICityService, CityService>();
+builder.Services.AddScoped<ISeasonService, SeasonService>();
+builder.Services.AddScoped<IEpisodeService, EpisodeService>();
+builder.Services.AddScoped<IChapterService, ChapterService>();
+builder.Services.AddScoped<ICharacterService, CharacterService>();
 
 // ─── Global Exception Handler (.NET 9) ───────────────────────────────────────
-
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
@@ -62,7 +114,6 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ─── Middleware pipeline ──────────────────────────────────────────────────────
-
 app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
