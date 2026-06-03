@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Progressio.Model.Enums;
 using Progressio.Model.Exceptions;
@@ -23,6 +24,10 @@ namespace Progressio.Services.Services
         private readonly IStateMachineService _stateMachine;
         private readonly IRabbitMqPublisher _publisher;
         private readonly ILogger<ProgressService> _logger;
+        private readonly IValidator<StartProgressRequest> _startValidator;
+        private readonly IValidator<ChangeStatusRequest> _changeStatusValidator;
+        private readonly IValidator<MarkEpisodeRequest> _markEpisodeValidator;
+        private readonly IValidator<MarkChapterRequest> _markChapterValidator;
 
         private const string AchievementsQueue = "check_achievements";
         private const string NotificationsQueue = "send_notification";
@@ -31,16 +36,28 @@ namespace Progressio.Services.Services
         ApplicationDbContext db,
         IStateMachineService stateMachine,
         IRabbitMqPublisher publisher,
-        ILogger<ProgressService> logger)
+        ILogger<ProgressService> logger,
+        IValidator<StartProgressRequest> startValidator,
+        IValidator<ChangeStatusRequest> changeStatusValidator,
+        IValidator<MarkEpisodeRequest> markEpisodeValidator,
+        IValidator<MarkChapterRequest> markChapterValidator)
         {
             _db = db;
             _stateMachine = stateMachine;
             _publisher = publisher;
             _logger = logger;
+            _startValidator = startValidator;
+            _changeStatusValidator = changeStatusValidator;
+            _markEpisodeValidator = markEpisodeValidator;
+            _markChapterValidator = markChapterValidator;
         }
 
         public async Task<ProgressResponse> StartProgressAsync(int userId, StartProgressRequest request)
         {
+            var validationResult = await _startValidator.ValidateAsync(request);
+            if (!validationResult.IsValid)
+                throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
             var content = await _db.Contents
                 .Include(c => c.ContentType)
                 .Include(c => c.Seasons).ThenInclude(s => s.Episodes)
@@ -48,7 +65,7 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(c => c.Id == request.ContentId && c.IsActive)
                 ?? throw new NotFoundException("Content", request.ContentId);
 
-            
+
             var existing = await _db.UserContentProgresses
                 .FirstOrDefaultAsync(p => p.UserId == userId && p.ContentId == request.ContentId);
 
@@ -62,7 +79,7 @@ namespace Progressio.Services.Services
                 Status = ProgressStatus.Pending
             };
 
-            
+
             _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
 
             _db.UserContentProgresses.Add(progress);
@@ -82,6 +99,10 @@ namespace Progressio.Services.Services
 
         public async Task<ProgressResponse> ChangeStatusAsync(int userId, int progressId, ChangeStatusRequest request)
         {
+            var validationResult = await _changeStatusValidator.ValidateAsync(request);
+            if (!validationResult.IsValid)
+                throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
             var progress = await _db.UserContentProgresses
                 .Include(p => p.Content).ThenInclude(c => c.ContentType)
                 .Include(p => p.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)
@@ -91,7 +112,7 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(p => p.Id == progressId)
                 ?? throw new NotFoundException("Progress", progressId);
 
-            
+
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only change your own progress.");
 
@@ -142,6 +163,10 @@ namespace Progressio.Services.Services
         public async Task<EpisodeProgressResponse> MarkEpisodeAsync(
         int userId, int progressId, MarkEpisodeRequest request)
         {
+            var validationResult = await _markEpisodeValidator.ValidateAsync(request);
+            if (!validationResult.IsValid)
+                throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
             var progress = await _db.UserContentProgresses
                 .Include(p => p.Content).ThenInclude(c => c.ContentType)
                 .Include(p => p.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)
@@ -156,13 +181,13 @@ namespace Progressio.Services.Services
             if (progress.Status == ProgressStatus.Completed || progress.Status == ProgressStatus.Cancelled)
                 throw new BusinessException($"Cannot mark episode on progress with status '{progress.Status}'.");
 
-            
+
             var episode = await _db.Episodes
                 .Include(e => e.Season)
                 .FirstOrDefaultAsync(e => e.Id == request.EpisodeId && e.Season.ContentId == progress.ContentId)
                 ?? throw new NotFoundException("Episode", request.EpisodeId);
 
-            
+
             var ep = progress.EpisodeProgresses.FirstOrDefault(x => x.EpisodeId == request.EpisodeId);
             bool isNewlyWatched = false;
 
@@ -187,13 +212,13 @@ namespace Progressio.Services.Services
 
             progress.LastActivityAt = DateTime.UtcNow;
 
-            
+
             if (isNewlyWatched)
                 await UpdateStreakAsync(userId);
 
             await _db.SaveChangesAsync();
 
-            
+
             await CheckAndAutocompleteAsync(progress);
 
             _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
@@ -223,6 +248,10 @@ namespace Progressio.Services.Services
         public async Task<ChapterProgressResponse> MarkChapterAsync(
         int userId, int progressId, MarkChapterRequest request)
         {
+            var validationResult = await _markChapterValidator.ValidateAsync(request);
+            if (!validationResult.IsValid)
+                throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
             var progress = await _db.UserContentProgresses
                 .Include(p => p.Content).ThenInclude(c => c.Chapters)
                 .Include(p => p.EpisodeProgresses)
@@ -316,7 +345,7 @@ namespace Progressio.Services.Services
 
             if (streak.LastActivityDate is null)
             {
-               
+
                 streak.CurrentStreak = 1;
                 streak.LongestStreak = Math.Max(streak.LongestStreak, 1);
                 streak.LastActivityDate = today;
@@ -327,11 +356,11 @@ namespace Progressio.Services.Services
 
                 if (lastDate == today)
                 {
-                    
+
                 }
                 else if (lastDate == today.AddDays(-1))
                 {
-                    
+
                     streak.CurrentStreak++;
                     if (streak.CurrentStreak > streak.LongestStreak)
                         streak.LongestStreak = streak.CurrentStreak;
@@ -339,7 +368,7 @@ namespace Progressio.Services.Services
                 }
                 else
                 {
-                    
+
                     streak.CurrentStreak = 1;
                     streak.LastActivityDate = today;
                 }
@@ -352,7 +381,7 @@ namespace Progressio.Services.Services
             var totalEpisodes = progress.Content.Seasons.SelectMany(s => s.Episodes).Count();
             var totalChapters = progress.Content.Chapters.Count;
 
-            
+
             if (totalEpisodes == 0 && totalChapters == 0) return;
 
             var watchedEpisodes = progress.EpisodeProgresses.Count(e => e.IsWatched);
@@ -413,7 +442,7 @@ namespace Progressio.Services.Services
         private async Task<ProgressResponse> BuildProgressResponseAsync(
         UserContentProgress p, Content content)
         {
-            
+
             var full = await _db.UserContentProgresses
                 .Include(x => x.Content).ThenInclude(c => c.ContentType)
                 .Include(x => x.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)

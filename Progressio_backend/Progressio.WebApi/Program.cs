@@ -7,6 +7,7 @@ using Microsoft.OpenApi.Models;
 using Progressio.Model.Requests;
 using Progressio.Model.Requests.AuthRequests;
 using Progressio.Model.Requests.CRUDRequests;
+using Progressio.Model.Requests.ProgressRequests;
 using Progressio.Services;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
@@ -125,6 +126,12 @@ builder.Services.AddScoped<IValidator<ChapterUpdateRequest>, ChapterUpdateValida
 // Character
 builder.Services.AddScoped<IValidator<CharacterInsertRequest>, CharacterInsertValidator>();
 builder.Services.AddScoped<IValidator<CharacterUpdateRequest>, CharacterUpdateValidator>();
+
+// Progress
+builder.Services.AddScoped<IValidator<StartProgressRequest>, StartProgressRequestValidator>();
+builder.Services.AddScoped<IValidator<ChangeStatusRequest>, ChangeStatusRequestValidator>();
+builder.Services.AddScoped<IValidator<MarkEpisodeRequest>, MarkEpisodeRequestValidator>();
+builder.Services.AddScoped<IValidator<MarkChapterRequest>, MarkChapterRequestValidator>();
 
 // ─── Services ─────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IAuthService, AuthService>();
