@@ -12,6 +12,7 @@ using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
 using Progressio.Services.Services;
 using Progressio.Services.Services.Validators;
+using Progressio.WebApi.Hubs;
 using Progressio.WebApi.Middleware;
 using System.Text;
 
@@ -56,6 +57,7 @@ builder.Services.AddAuthentication(options =>
         ClockSkew = TimeSpan.Zero
     };
 
+    // JWT za SignalR dolazi iz query stringa (?access_token=...)
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
@@ -67,7 +69,6 @@ builder.Services.AddAuthentication(options =>
             return Task.CompletedTask;
         }
     };
-
 });
 
 builder.Services.AddAuthorization();
@@ -141,14 +142,17 @@ builder.Services.AddScoped<IChapterService, ChapterService>();
 builder.Services.AddScoped<ICharacterService, CharacterService>();
 builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
 
-builder.Services.AddDirectoryBrowser();
+builder.Services.AddScoped<IStateMachineService, StateMachineService>();
+builder.Services.AddScoped<IProgressService, ProgressService>();
 
-
+// ─── RabbitMQ Publisher (Singleton — jedna konekcija) ─────────────────────────
+builder.Services.AddSingleton<Progressio.Services.Messaging.IRabbitMqPublisher,
+                               Progressio.Services.Messaging.RabbitMqPublisher>();
 
 // ─── Memory Cache ─────────────────────────────────────────────────────────────
 builder.Services.AddMemoryCache();
 
-
+// ─── Upload path ──────────────────────────────────────────────────────────────
 builder.Configuration["UploadPath"] = Path.Combine(builder.Environment.WebRootPath ??
     Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "profiles");
 
@@ -161,6 +165,9 @@ builder.Services.AddProblemDetails();
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
+
+// ─── SignalR ──────────────────────────────────────────────────────────────────
+builder.Services.AddSignalR();
 
 // ─── Static files (za profile image upload) ──────────────────────────────────
 builder.Services.AddDirectoryBrowser();
@@ -223,5 +230,8 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// ─── SignalR Hub routing ──────────────────────────────────────────────────────
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
