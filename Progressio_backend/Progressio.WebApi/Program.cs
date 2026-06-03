@@ -1,12 +1,19 @@
 ﻿using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Progressio.Model.Requests;
+using Progressio.Model.Requests.AuthRequests;
+using Progressio.Model.Requests.CRUDRequests;
+using Progressio.Services;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
 using Progressio.Services.Services;
 using Progressio.Services.Services.Validators;
 using Progressio.WebApi.Middleware;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,7 +32,38 @@ builder.Services.AddIdentity<AppUser, IdentityRole<int>>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
+// ─── JWT Authentication ───────────────────────────────────────────────────────
+var jwtSettings = builder.Configuration.GetSection("Jwt");
+var jwtKey = jwtSettings["Key"]
+    ?? throw new InvalidOperationException("JWT Key is not configured.");
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidAudience = jwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization();
+
 // ─── Validators ──────────────────────────────────────────────────────────────
+// Auth
+builder.Services.AddScoped<IValidator<RegisterRequest>, RegisterRequestValidator>();
+builder.Services.AddScoped<IValidator<ChangePasswordRequest>, ChangePasswordRequestValidator>();
+
 // Content
 builder.Services.AddScoped<IValidator<ContentInsertRequest>, ContentInsertValidator>();
 builder.Services.AddScoped<IValidator<ContentUpdateRequest>, ContentUpdateValidator>();
@@ -75,6 +113,7 @@ builder.Services.AddScoped<IValidator<CharacterInsertRequest>, CharacterInsertVa
 builder.Services.AddScoped<IValidator<CharacterUpdateRequest>, CharacterUpdateValidator>();
 
 // ─── Services ─────────────────────────────────────────────────────────────────
+builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IContentService, ContentService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
 builder.Services.AddScoped<IContentTypeService, ContentTypeService>();
@@ -88,6 +127,15 @@ builder.Services.AddScoped<IEpisodeService, EpisodeService>();
 builder.Services.AddScoped<IChapterService, ChapterService>();
 builder.Services.AddScoped<ICharacterService, CharacterService>();
 
+
+builder.Services.AddDirectoryBrowser();
+
+builder.Configuration["UploadPath"] = Path.Combine(builder.Environment.WebRootPath ??
+    Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "profiles");
+
+// ─── Singletons ───────────────────────────────────────────────────────────────
+builder.Services.AddSingleton<Progressio.Commom.Services.CryptoService>();
+
 // ─── Global Exception Handler (.NET 9) ───────────────────────────────────────
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
@@ -95,9 +143,34 @@ builder.Services.AddProblemDetails();
 // ─── Controllers ─────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
 
-// ─── Swagger / OpenAPI ───────────────────────────────────────────────────────
+// ─── Static files (za profile image upload) ──────────────────────────────────
+builder.Services.AddDirectoryBrowser();
+
+// ─── Swagger / OpenAPI sa JWT podrškom ───────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Progressio API", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter JWT token: Bearer {token}"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -124,6 +197,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Static files za profile images
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

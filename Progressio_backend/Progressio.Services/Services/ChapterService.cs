@@ -1,8 +1,8 @@
 ﻿using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Progressio.Model.Exceptions;
-using Progressio.Model.Requests;
-using Progressio.Model.Responses;
+using Progressio.Model.Requests.CRUDRequests;
+using Progressio.Model.Responses.CRUDResponses;
 using Progressio.Model.SearchObjects;
 using Progressio.Services.Base;
 using Progressio.Services.Database;

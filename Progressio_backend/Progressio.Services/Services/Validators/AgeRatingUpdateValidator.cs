@@ -1,5 +1,5 @@
 ﻿using FluentValidation;
-using Progressio.Model.Requests;
+using Progressio.Model.Requests.CRUDRequests;
 using System;
 using System.Collections.Generic;
 using System.Linq;

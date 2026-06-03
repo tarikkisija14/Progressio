@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Progressio.Model.Requests;
-using Progressio.Model.Responses;
+using Progressio.Model.Requests.CRUDRequests;
+using Progressio.Model.Responses.CRUDResponses;
 using Progressio.Model.SearchObjects;
 using Progressio.Services.Services;
 using Progressio.WebApi.Controllers.Base;
