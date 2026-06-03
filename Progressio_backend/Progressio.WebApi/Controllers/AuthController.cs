@@ -93,8 +93,5 @@ namespace Progressio.WebApi.Controllers
         }
     }
 
-    public class UpdateProfileVisibilityRequest
-    {
-        public bool IsPublic { get; set; }
-    }
+   
 }

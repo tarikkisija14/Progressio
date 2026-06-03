@@ -55,6 +55,19 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ClockSkew = TimeSpan.Zero
     };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                context.Token = accessToken;
+            return Task.CompletedTask;
+        }
+    };
+
 });
 
 builder.Services.AddAuthorization();
@@ -126,9 +139,15 @@ builder.Services.AddScoped<ISeasonService, SeasonService>();
 builder.Services.AddScoped<IEpisodeService, EpisodeService>();
 builder.Services.AddScoped<IChapterService, ChapterService>();
 builder.Services.AddScoped<ICharacterService, CharacterService>();
-
+builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
 
 builder.Services.AddDirectoryBrowser();
+
+
+
+// ─── Memory Cache ─────────────────────────────────────────────────────────────
+builder.Services.AddMemoryCache();
+
 
 builder.Configuration["UploadPath"] = Path.Combine(builder.Environment.WebRootPath ??
     Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "profiles");
