@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Progressio.Model.Requests;
 using Progressio.Model.Requests.AuthRequests;
+using Progressio.Model.Requests.CommentRequests;
 using Progressio.Model.Requests.CRUDRequests;
 using Progressio.Model.Requests.ProgressRequests;
 using Progressio.Model.Requests.ReviewRequests;
@@ -137,6 +138,8 @@ builder.Services.AddScoped<IValidator<MarkChapterRequest>, MarkChapterRequestVal
 builder.Services.AddScoped<IValidator<ReviewInsertRequest>, ReviewInsertValidator>();
 builder.Services.AddScoped<IValidator<ReviewUpdateRequest>, ReviewUpdateValidator>();
 builder.Services.AddScoped<IValidator<CharacterVoteRequest>, CharacterVoteRequestValidator>();
+builder.Services.AddScoped<IValidator<CommentUpdateRequest>, CommentUpdateValidator>();
+
 
 
 // ─── Services ─────────────────────────────────────────────────────────────────
@@ -160,6 +163,9 @@ builder.Services.AddScoped<IProgressService, ProgressService>();
 
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<ICharacterVoteService, CharacterVoteService>();
+builder.Services.AddScoped<IValidator<CommentInsertRequest>, CommentInsertValidator>();
+builder.Services.AddScoped<ICommentService, CommentService>();
+
 
 
 // ─── RabbitMQ Publisher (Singleton — jedna konekcija) ─────────────────────────
