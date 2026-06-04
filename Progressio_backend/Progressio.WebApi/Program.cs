@@ -8,6 +8,8 @@ using Progressio.Model.Requests;
 using Progressio.Model.Requests.AuthRequests;
 using Progressio.Model.Requests.CRUDRequests;
 using Progressio.Model.Requests.ProgressRequests;
+using Progressio.Model.Requests.ReviewRequests;
+using Progressio.Model.Requests.VoteRequests;
 using Progressio.Services;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
@@ -132,6 +134,10 @@ builder.Services.AddScoped<IValidator<StartProgressRequest>, StartProgressReques
 builder.Services.AddScoped<IValidator<ChangeStatusRequest>, ChangeStatusRequestValidator>();
 builder.Services.AddScoped<IValidator<MarkEpisodeRequest>, MarkEpisodeRequestValidator>();
 builder.Services.AddScoped<IValidator<MarkChapterRequest>, MarkChapterRequestValidator>();
+builder.Services.AddScoped<IValidator<ReviewInsertRequest>, ReviewInsertValidator>();
+builder.Services.AddScoped<IValidator<ReviewUpdateRequest>, ReviewUpdateValidator>();
+builder.Services.AddScoped<IValidator<CharacterVoteRequest>, CharacterVoteRequestValidator>();
+
 
 // ─── Services ─────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -151,6 +157,10 @@ builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
 
 builder.Services.AddScoped<IStateMachineService, StateMachineService>();
 builder.Services.AddScoped<IProgressService, ProgressService>();
+
+builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<ICharacterVoteService, CharacterVoteService>();
+
 
 // ─── RabbitMQ Publisher (Singleton — jedna konekcija) ─────────────────────────
 builder.Services.AddSingleton<Progressio.Services.Messaging.IRabbitMqPublisher,
