@@ -182,6 +182,7 @@ builder.Services.AddScoped<IAchievementService, AchievementService>();
 
 builder.Services.AddScoped<ICalendarService, CalendarService>();
 
+builder.Services.AddScoped<IStatisticsService, StatisticsService>();
 
 
 builder.Services.AddMemoryCache();
