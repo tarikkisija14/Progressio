@@ -20,7 +20,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         private int GetUserId() =>
-            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
+            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 1;
 
         private bool IsAdmin() =>
             User.IsInRole("Admin");

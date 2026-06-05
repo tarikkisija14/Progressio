@@ -22,7 +22,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         private int GetUserId() =>
-     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
+     int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 1;
 
 
         [HttpGet("{contentId:int}")]

@@ -8,6 +8,7 @@ using Progressio.Model.Requests;
 using Progressio.Model.Requests.AuthRequests;
 using Progressio.Model.Requests.CommentRequests;
 using Progressio.Model.Requests.CRUDRequests;
+using Progressio.Model.Requests.ListRequests;
 using Progressio.Model.Requests.ProgressRequests;
 using Progressio.Model.Requests.ReviewRequests;
 using Progressio.Model.Requests.VoteRequests;
@@ -165,8 +166,18 @@ builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<ICharacterVoteService, CharacterVoteService>();
 builder.Services.AddScoped<IValidator<CommentInsertRequest>, CommentInsertValidator>();
 builder.Services.AddScoped<ICommentService, CommentService>();
+builder.Services.AddScoped<IFollowService, FollowService>();
+builder.Services.AddScoped<IFeedService, FeedService>();
 
 
+builder.Services.AddScoped<IValidator<UserListInsertRequest>, UserListInsertValidator>();
+builder.Services.AddScoped<IValidator<UserListUpdateRequest>, UserListUpdateValidator>();
+builder.Services.AddScoped<IValidator<UserListItemInsertRequest>, UserListItemInsertValidator>();
+builder.Services.AddScoped<IUserListService, UserListService>();
+
+
+
+builder.Services.AddMemoryCache();
 
 // ─── RabbitMQ Publisher (Singleton — jedna konekcija) ─────────────────────────
 builder.Services.AddSingleton<Progressio.Services.Messaging.IRabbitMqPublisher,
