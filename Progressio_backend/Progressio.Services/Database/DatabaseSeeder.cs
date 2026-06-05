@@ -212,6 +212,86 @@ public static class DatabaseSeeder
         if (!await context.Achievements.AnyAsync(x => x.Code == "COMMENTER"))
             context.Achievements.Add(new Achievement { Code = "COMMENTER", Name = "Commentator", Description = "Ostavio si prvi komentar.", IconUrl = "/icons/achievements/commenter.png" });
 
+        if (!await context.Achievements.AnyAsync(x => x.Code == "binge_watcher"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "binge_watcher",
+                Name = "Binge Watcher",
+                Description = "Označi 10+ epizoda u jednom kalendarskom danu.",
+                IconUrl = "/icons/achievements/binge_watcher.png",
+                ConditionJson = "{\"type\":\"EpisodeWatched\",\"count\":10,\"window\":\"day\"}"
+            });
+
+        if (!await context.Achievements.AnyAsync(x => x.Code == "book_worm"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "book_worm",
+                Name = "Book Worm",
+                Description = "Završi 5 ili više knjiga.",
+                IconUrl = "/icons/achievements/book_worm.png",
+                ConditionJson = "{\"type\":\"StatusChanged\",\"contentType\":\"Knjiga\",\"count\":5}"
+            });
+
+        if (!await context.Achievements.AnyAsync(x => x.Code == "critic"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "critic",
+                Name = "Critic",
+                Description = "Napiši 20 ili više recenzija.",
+                IconUrl = "/icons/achievements/critic.png",
+                ConditionJson = "{\"type\":\"ReviewCreated\",\"count\":20}"
+            });
+
+        if (!await context.Achievements.AnyAsync(x => x.Code == "social_butterfly"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "social_butterfly",
+                Name = "Social Butterfly",
+                Description = "Skupi 10 ili više pratilaca.",
+                IconUrl = "/icons/achievements/social_butterfly.png",
+                ConditionJson = "{\"type\":\"FollowReceived\",\"count\":10}"
+            });
+
+        if (!await context.Achievements.AnyAsync(x => x.Code == "completionist"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "completionist",
+                Name = "Completionist",
+                Description = "Završi 50 ili više sadržaja.",
+                IconUrl = "/icons/achievements/completionist.png",
+                ConditionJson = "{\"type\":\"StatusChanged\",\"count\":50}"
+            });
+
+        if (!await context.Achievements.AnyAsync(x => x.Code == "streak_master"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "streak_master",
+                Name = "Streak Master",
+                Description = "Postigne streak od 30 ili više dana.",
+                IconUrl = "/icons/achievements/streak_master.png",
+                ConditionJson = "{\"type\":\"StatusChanged\",\"longestStreak\":30}"
+            });
+
+        if (!await context.Achievements.AnyAsync(x => x.Code == "anime_nerd"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "anime_nerd",
+                Name = "Anime Nerd",
+                Description = "Završi 20 ili više anime naslova.",
+                IconUrl = "/icons/achievements/anime_nerd.png",
+                ConditionJson = "{\"type\":\"StatusChanged\",\"contentType\":\"Anime\",\"count\":20}"
+            });
+
+        if (!await context.Achievements.AnyAsync(x => x.Code == "game_over"))
+            context.Achievements.Add(new Achievement
+            {
+                Code = "game_over",
+                Name = "Game Over",
+                Description = "Završi 10 ili više igrica.",
+                IconUrl = "/icons/achievements/game_over.png",
+                ConditionJson = "{\"type\":\"StatusChanged\",\"contentType\":\"Igrica\",\"count\":10}"
+            });
+
         await context.SaveChangesAsync();
     }
 

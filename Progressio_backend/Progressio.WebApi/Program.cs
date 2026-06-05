@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Progressio.Model.Requests;
+using Progressio.Model.Requests.AchievmentRequests;
 using Progressio.Model.Requests.AuthRequests;
 using Progressio.Model.Requests.CommentRequests;
 using Progressio.Model.Requests.CRUDRequests;
@@ -140,6 +141,9 @@ builder.Services.AddScoped<IValidator<ReviewInsertRequest>, ReviewInsertValidato
 builder.Services.AddScoped<IValidator<ReviewUpdateRequest>, ReviewUpdateValidator>();
 builder.Services.AddScoped<IValidator<CharacterVoteRequest>, CharacterVoteRequestValidator>();
 builder.Services.AddScoped<IValidator<CommentUpdateRequest>, CommentUpdateValidator>();
+builder.Services.AddScoped<IValidator<AchievementInsertRequest>, AchievementInsertValidator>();
+builder.Services.AddScoped<IValidator<AchievementUpdateRequest>, AchievementUpdateValidator>();
+
 
 
 
@@ -174,6 +178,8 @@ builder.Services.AddScoped<IValidator<UserListInsertRequest>, UserListInsertVali
 builder.Services.AddScoped<IValidator<UserListUpdateRequest>, UserListUpdateValidator>();
 builder.Services.AddScoped<IValidator<UserListItemInsertRequest>, UserListItemInsertValidator>();
 builder.Services.AddScoped<IUserListService, UserListService>();
+builder.Services.AddScoped<IAchievementService, AchievementService>();
+
 
 
 
