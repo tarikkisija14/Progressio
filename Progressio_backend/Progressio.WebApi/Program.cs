@@ -180,6 +180,7 @@ builder.Services.AddScoped<IValidator<UserListItemInsertRequest>, UserListItemIn
 builder.Services.AddScoped<IUserListService, UserListService>();
 builder.Services.AddScoped<IAchievementService, AchievementService>();
 
+builder.Services.AddScoped<ICalendarService, CalendarService>();
 
 
 
@@ -211,6 +212,8 @@ builder.Services.AddSignalR();
 
 // ─── Static files (za profile image upload) ──────────────────────────────────
 builder.Services.AddDirectoryBrowser();
+
+
 
 // ─── Swagger / OpenAPI sa JWT podrškom ───────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();

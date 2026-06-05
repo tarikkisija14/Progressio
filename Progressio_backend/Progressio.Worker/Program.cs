@@ -1,20 +1,25 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Progressio.Services.Database;
 using Progressio.Worker.Consumers;
+using Progressio.Worker.Jobs;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// ─── DbContext ──────────────────────────────────────────────────────────────
+// ─── DbContext ───────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 
-// ─── Identity (potrebno za DbContext sa Identity tabelama) ──────────────────
+// ─── Identity (needed for DbContext with Identity tables) ────────────────────
 builder.Services.AddIdentityCore<Progressio.Services.Database.Entities.AppUser>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
 
-// ─── RabbitMQ Consumers ─────────────────────────────────────────────────────
+// ─── RabbitMQ Consumers ──────────────────────────────────────────────────────
 builder.Services.AddHostedService<AchievementConsumer>();
 builder.Services.AddHostedService<NotificationConsumer>();
+builder.Services.AddHostedService<EmailConsumer>();
+
+// ─── Scheduled Jobs ──────────────────────────────────────────────────────────
+builder.Services.AddHostedService<EpisodeAiredJob>();
 
 var host = builder.Build();
 host.Run();
