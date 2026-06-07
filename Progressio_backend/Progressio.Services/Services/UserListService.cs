@@ -27,7 +27,7 @@ namespace Progressio.Services.Services
         private readonly IValidator<UserListUpdateRequest> _updateValidator;
         private readonly IValidator<UserListItemInsertRequest> _itemValidator;
 
-        private const string NotificationQueue = "send_notification";
+        private const string ListInviteQueue = "list.invite";
 
         public UserListService(
         ApplicationDbContext db,
@@ -47,7 +47,6 @@ namespace Progressio.Services.Services
 
         public async Task<PagedResult<UserListResponse>> GetMyListsAsync(int currentUserId, UserListSearchObject search)
         {
-            
             var query = _db.UserLists
                 .Include(l => l.Items)
                 .Include(l => l.Members)
@@ -146,7 +145,6 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-            
             bool hasAccess = list.IsPublic
                 || (currentUserId.HasValue && list.UserId == currentUserId.Value)
                 || (currentUserId.HasValue && list.Members.Any(m => m.UserId == currentUserId.Value));
@@ -223,7 +221,6 @@ namespace Progressio.Services.Services
             var list = await _db.UserLists.FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-           
             if (list.UserId != currentUserId)
                 throw new ForbiddenException("Only the list creator can update list settings.");
 
@@ -243,7 +240,6 @@ namespace Progressio.Services.Services
             var list = await _db.UserLists.FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-           
             if (list.UserId != currentUserId)
                 throw new ForbiddenException("Only the list creator can delete this list.");
 
@@ -264,19 +260,16 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-           
             bool canEdit = list.UserId == currentUserId
                 || (list.IsShared && list.Members.Any(m => m.UserId == currentUserId && m.CanEdit));
 
             if (!canEdit)
                 throw new ForbiddenException("You do not have permission to add items to this list.");
 
-            
             var contentExists = await _db.Contents.AnyAsync(c => c.Id == request.ContentId && c.IsActive);
             if (!contentExists)
                 throw new NotFoundException("Content", request.ContentId);
 
-           
             var duplicate = await _db.UserListItems
                 .AnyAsync(i => i.UserListId == listId && i.ContentId == request.ContentId);
             if (duplicate)
@@ -321,7 +314,6 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-            
             bool canEdit = list.UserId == currentUserId
                 || (list.IsShared && list.Members.Any(m => m.UserId == currentUserId && m.CanEdit));
 
@@ -347,7 +339,6 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-            
             if (!source.IsPublic)
                 throw new BusinessException("Fork is only available for public lists.");
 
@@ -364,7 +355,6 @@ namespace Progressio.Services.Services
             _db.UserLists.Add(forked);
             await _db.SaveChangesAsync();
 
-            
             var itemsCopy = source.Items.Select(i => new UserListItem
             {
                 UserListId = forked.Id,
@@ -390,26 +380,21 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-            
             if (list.UserId != currentUserId)
                 throw new ForbiddenException("Only the list creator can invite members.");
 
             if (!list.IsShared)
                 throw new BusinessException("Invitations are only available for shared lists.");
 
-            
             var invitee = await _db.Users.FirstOrDefaultAsync(u => u.Id == inviteeUserId && u.IsActive)
                 ?? throw new NotFoundException("User", inviteeUserId);
 
-            
             if (inviteeUserId == currentUserId)
                 throw new BusinessException("You cannot invite yourself.");
 
-           
             if (list.Members.Any(m => m.UserId == inviteeUserId))
                 throw new BusinessException("User is already a member of this list.");
 
-            
             var pendingInvite = list.Invites
                 .FirstOrDefault(i => i.InviteeId == inviteeUserId && i.Status == InviteStatus.Pending);
             if (pendingInvite is not null)
@@ -427,15 +412,14 @@ namespace Progressio.Services.Services
             _db.UserListInvites.Add(invite);
             await _db.SaveChangesAsync();
 
-            
             var inviter = await _db.Users.FirstOrDefaultAsync(u => u.Id == currentUserId);
-            _publisher.Publish(NotificationQueue, new SendNotificationMessage
+            _publisher.Publish(ListInviteQueue, new ListInviteMessage
             {
-                UserId = inviteeUserId,
-                Title = "Shared list invitation",
-                Message = $"{inviter?.UserName} invited you to collaborate on the list \"{list.Name}\".",
-                NotificationType = "ListInvite",
-                RelatedEntityId = listId
+                InviteeUserId = inviteeUserId,
+                InviterUserId = currentUserId,
+                InviterUserName = inviter?.UserName ?? string.Empty,
+                ListId = listId,
+                ListName = list.Name
             });
 
             _logger.LogInformation("User {InviterId} invited User {InviteeId} to list {ListId}",
@@ -452,7 +436,6 @@ namespace Progressio.Services.Services
             invite.Status = InviteStatus.Accepted;
             invite.RespondedAt = DateTime.UtcNow;
 
-            
             var member = new UserListMember
             {
                 UserListId = listId,
@@ -486,7 +469,6 @@ namespace Progressio.Services.Services
             var list = await _db.UserLists.FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
-           
             if (list.UserId == currentUserId)
                 throw new BusinessException("As the list creator you cannot leave the list. Delete it instead.");
 
@@ -521,8 +503,5 @@ namespace Progressio.Services.Services
                 })
                 .FirstAsync();
         }
-
-
-
     }
 }

@@ -17,6 +17,9 @@ builder.Services.AddIdentityCore<Progressio.Services.Database.Entities.AppUser>(
 builder.Services.AddHostedService<AchievementConsumer>();
 builder.Services.AddHostedService<NotificationConsumer>();
 builder.Services.AddHostedService<EmailConsumer>();
+builder.Services.AddHostedService<ListInviteConsumer>();
+builder.Services.AddHostedService<CommentLikedConsumer>();
+builder.Services.AddHostedService<UserFollowedConsumer>();
 
 // ─── Scheduled Jobs ──────────────────────────────────────────────────────────
 builder.Services.AddHostedService<EpisodeAiredJob>();

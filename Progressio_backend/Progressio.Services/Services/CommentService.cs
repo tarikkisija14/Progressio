@@ -17,7 +17,7 @@ using System.Threading.Tasks;
 
 namespace Progressio.Services.Services
 {
-   public class CommentService : ICommentService
+    public class CommentService : ICommentService
 
     {
         private readonly ApplicationDbContext _db;
@@ -27,6 +27,7 @@ namespace Progressio.Services.Services
         private readonly IValidator<CommentUpdateRequest> _updateValidator;
 
         private const string NotificationsQueue = "send_notification";
+        private const string CommentLikedQueue = "comment.liked";
 
         public CommentService(
            ApplicationDbContext db,
@@ -59,7 +60,6 @@ namespace Progressio.Services.Services
             if (searchObject.ContentId.HasValue && !searchObject.EpisodeId.HasValue && !searchObject.ChapterId.HasValue)
                 query = query.Where(c => c.ContentId == searchObject.ContentId.Value);
 
-            
             if (searchObject.HideSpoilers)
                 query = query.Where(c => !c.HasSpoiler);
 
@@ -74,7 +74,6 @@ namespace Progressio.Services.Services
                 .Take(pageSize)
                 .ToListAsync();
 
-           
             HashSet<int> likedCommentIds = [];
             if (currentUserId.HasValue && currentUserId.Value > 0)
             {
@@ -116,12 +115,10 @@ namespace Progressio.Services.Services
             if (!validationResult.IsValid)
                 throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
 
-           
             var content = await _db.Contents
                 .FirstOrDefaultAsync(c => c.Id == request.ContentId && c.IsActive)
                 ?? throw new NotFoundException("Content", request.ContentId);
 
-           
             if (request.EpisodeId.HasValue)
             {
                 var episodeExists = await _db.Episodes.AnyAsync(e => e.Id == request.EpisodeId.Value);
@@ -129,7 +126,6 @@ namespace Progressio.Services.Services
                     throw new NotFoundException("Episode", request.EpisodeId.Value);
             }
 
-           
             if (request.ChapterId.HasValue)
             {
                 var chapterExists = await _db.Chapters.AnyAsync(c => c.Id == request.ChapterId.Value);
@@ -154,10 +150,9 @@ namespace Progressio.Services.Services
             await _db.SaveChangesAsync();
 
             _logger.LogInformation(
-                "User {UserId} dodao komentar {CommentId} na Content {ContentId}",
+                "User {UserId} added comment {CommentId} on Content {ContentId}",
                 userId, comment.Id, request.ContentId);
 
-            
             var contentOwner = await _db.UserContentProgresses
                 .Where(p => p.ContentId == request.ContentId && p.UserId != userId)
                 .Select(p => p.UserId)
@@ -168,14 +163,13 @@ namespace Progressio.Services.Services
                 _publisher.Publish(NotificationsQueue, new SendNotificationMessage
                 {
                     UserId = contentOwner,
-                    Title = "Novi komentar",
-                    Message = $"Neko je komentarisao sadrzaj '{content.Title}'.",
+                    Title = "New comment",
+                    Message = $"Someone commented on the content '{content.Title}'.",
                     NotificationType = "CommentLiked",
                     RelatedEntityId = comment.Id
                 });
             }
 
-           
             var user = await _db.Users.FindAsync(userId);
 
             return new CommentResponse
@@ -240,33 +234,28 @@ namespace Progressio.Services.Services
             };
         }
 
-
-
         public async Task ToggleLikeAsync(int userId, int commentId)
         {
             var comment = await _db.ContentComments
                 .FirstOrDefaultAsync(c => c.Id == commentId && c.IsVisible)
                 ?? throw new NotFoundException("Comment", commentId);
 
-            
             if (comment.UserId == userId)
-                throw new BusinessException("Ne možeš lajkovati vlastiti komentar.");
+                throw new BusinessException("You cannot like your own comment.");
 
             var existing = await _db.CommentLikes
                 .FirstOrDefaultAsync(l => l.UserId == userId && l.ContentCommentId == commentId);
 
             if (existing is not null)
             {
-                
                 _db.CommentLikes.Remove(existing);
                 comment.LikeCount = Math.Max(0, comment.LikeCount - 1);
                 await _db.SaveChangesAsync();
 
-                _logger.LogInformation("User {UserId} unlikao komentar {CommentId}", userId, commentId);
+                _logger.LogInformation("User {UserId} unliked comment {CommentId}", userId, commentId);
             }
             else
             {
-                
                 _db.CommentLikes.Add(new CommentLike
                 {
                     UserId = userId,
@@ -276,18 +265,15 @@ namespace Progressio.Services.Services
                 comment.LikeCount += 1;
                 await _db.SaveChangesAsync();
 
-                _logger.LogInformation("User {UserId} likovao komentar {CommentId}", userId, commentId);
+                _logger.LogInformation("User {UserId} liked comment {CommentId}", userId, commentId);
 
-                
                 if (comment.UserId != userId)
                 {
-                    _publisher.Publish(NotificationsQueue, new SendNotificationMessage
+                    _publisher.Publish(CommentLikedQueue, new CommentLikedMessage
                     {
-                        UserId = comment.UserId,
-                        Title = "Neko je lajkovao tvoj komentar",
-                        Message = "Tvoj komentar je dobio novi like.",
-                        NotificationType = "CommentLiked",
-                        RelatedEntityId = commentId
+                        CommentAuthorUserId = comment.UserId,
+                        CommentId = commentId,
+                        LikedByUserId = userId
                     });
                 }
             }
@@ -298,16 +284,14 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(c => c.Id == commentId)
                 ?? throw new NotFoundException("Comment", commentId);
 
-            
             if (!isAdmin && comment.UserId != userId)
-                throw new ForbiddenException("Možeš obrisati samo vlastite komentare.");
+                throw new ForbiddenException("You can only delete your own comments.");
 
-           
             comment.IsVisible = false;
             await _db.SaveChangesAsync();
 
             _logger.LogInformation(
-                "Komentar {CommentId} soft-deletovan od strane {Actor} (isAdmin={IsAdmin})",
+                "Comment {CommentId} soft-deleted by {Actor} (isAdmin={IsAdmin})",
                 commentId, userId, isAdmin);
         }
 

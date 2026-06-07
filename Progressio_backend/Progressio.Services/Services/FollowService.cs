@@ -17,7 +17,7 @@ namespace Progressio.Services.Services
         private readonly ILogger<FollowService> _logger;
         private readonly IRabbitMqPublisher _publisher;
 
-        private const string NotificationsQueue = "send_notification";
+        private const string UserFollowedQueue = "user.followed";
         private const string AchievementsQueue = "check_achievements";
 
         public FollowService(
@@ -55,21 +55,19 @@ namespace Progressio.Services.Services
 
             _logger.LogInformation("User {FollowerId} is now following User {FollowingId}", currentUserId, targetUserId);
 
-           
             var follower = await _db.Users.FirstOrDefaultAsync(u => u.Id == currentUserId);
             if (follower is not null)
             {
-                _publisher.Publish(NotificationsQueue, new SendNotificationMessage
+                _publisher.Publish(UserFollowedQueue, new UserFollowedMessage
                 {
-                    UserId = targetUserId,
-                    Title = "New follower",
-                    Message = $"{follower.FirstName} {follower.LastName} (@{follower.UserName}) started following you.",
-                    NotificationType = "Follow",
-                    RelatedEntityId = currentUserId
+                    FollowedUserId = targetUserId,
+                    FollowerUserId = currentUserId,
+                    FollowerFirstName = follower.FirstName,
+                    FollowerLastName = follower.LastName,
+                    FollowerUserName = follower.UserName ?? string.Empty
                 });
             }
 
-           
             _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
             {
                 UserId = targetUserId,
@@ -166,7 +164,6 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(u => u.Id == targetUserId && u.IsActive)
                 ?? throw new NotFoundException("User", targetUserId);
 
-            
             if (!user.IsProfilePublic && currentUserId != targetUserId)
             {
                 bool isFollower = false;
@@ -204,9 +201,5 @@ namespace Progressio.Services.Services
                 CreatedAt = user.CreatedAt
             };
         }
-
-
-
-
     }
 }
