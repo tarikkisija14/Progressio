@@ -198,8 +198,12 @@ builder.Services.AddScoped<IRecommenderService, RecommenderService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IExportService, ExportService>();
 
-// ─── Notification Service (Phase 16) ─────────────────────────────────────────
+// ─── Notification Service  ─────────────────────────────────────────
 builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// ─── Admin & Report Services  ──────────────────────────────────────
+builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IReportService, ReportService>();
 
 builder.Services.AddMemoryCache();
 
