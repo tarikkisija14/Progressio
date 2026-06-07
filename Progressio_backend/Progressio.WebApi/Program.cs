@@ -10,6 +10,7 @@ using Progressio.Model.Requests.AuthRequests;
 using Progressio.Model.Requests.CommentRequests;
 using Progressio.Model.Requests.CRUDRequests;
 using Progressio.Model.Requests.ListRequests;
+using Progressio.Model.Requests.PaymentRequests;
 using Progressio.Model.Requests.ProgressRequests;
 using Progressio.Model.Requests.ReviewRequests;
 using Progressio.Model.Requests.VoteRequests;
@@ -20,6 +21,7 @@ using Progressio.Services.Services;
 using Progressio.Services.Services.Validators;
 using Progressio.WebApi.Hubs;
 using Progressio.WebApi.Middleware;
+using Stripe;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -77,7 +79,11 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+
 builder.Services.AddAuthorization();
+
+StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"]
+    ?? throw new InvalidOperationException("Stripe SecretKey is not configured.");
 
 // ─── Validators ──────────────────────────────────────────────────────────────
 // Auth
@@ -145,6 +151,9 @@ builder.Services.AddScoped<IValidator<AchievementInsertRequest>, AchievementInse
 builder.Services.AddScoped<IValidator<AchievementUpdateRequest>, AchievementUpdateValidator>();
 builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
 builder.Services.AddScoped<IValidator<CommentInsertRequest>, CommentInsertValidator>();
+builder.Services.AddScoped<IValidator<CreatePaymentIntentRequest>, CreatePaymentIntentRequestValidator>();
+builder.Services.AddScoped<IValidator<RefundRequest>, RefundRequestValidator>();
+
 
 
 // ─── Services ─────────────────────────────────────────────────────────────────
@@ -166,7 +175,7 @@ builder.Services.AddScoped<ICharacterService, CharacterService>();
 builder.Services.AddScoped<IStateMachineService, StateMachineService>();
 builder.Services.AddScoped<IProgressService, ProgressService>();
 
-builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<IReviewService, Progressio.Services.Services.ReviewService>(); 
 builder.Services.AddScoped<ICharacterVoteService, CharacterVoteService>();
 
 builder.Services.AddScoped<ICommentService, CommentService>();
@@ -186,6 +195,8 @@ builder.Services.AddScoped<ICalendarService, CalendarService>();
 
 builder.Services.AddScoped<IStatisticsService, StatisticsService>();
 builder.Services.AddScoped<IRecommenderService, RecommenderService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IExportService, ExportService>();
 
 
 builder.Services.AddMemoryCache();
