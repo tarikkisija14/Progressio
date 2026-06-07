@@ -12,6 +12,8 @@ namespace Progressio.Model.SearchObjects
         public int? ContentTypeId { get; set; }
         public bool? IsActive { get; set; } = true;
         public int? GenreId { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore]
+        public int? RequestingUserId { get; set; }
 
     }
 }

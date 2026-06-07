@@ -63,7 +63,7 @@ builder.Services.AddAuthentication(options =>
         ClockSkew = TimeSpan.Zero
     };
 
-    // JWT za SignalR dolazi iz query stringa (?access_token=...)
+   
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
@@ -143,8 +143,8 @@ builder.Services.AddScoped<IValidator<CharacterVoteRequest>, CharacterVoteReques
 builder.Services.AddScoped<IValidator<CommentUpdateRequest>, CommentUpdateValidator>();
 builder.Services.AddScoped<IValidator<AchievementInsertRequest>, AchievementInsertValidator>();
 builder.Services.AddScoped<IValidator<AchievementUpdateRequest>, AchievementUpdateValidator>();
-
-
+builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
+builder.Services.AddScoped<IValidator<CommentInsertRequest>, CommentInsertValidator>();
 
 
 // ─── Services ─────────────────────────────────────────────────────────────────
@@ -161,17 +161,19 @@ builder.Services.AddScoped<ISeasonService, SeasonService>();
 builder.Services.AddScoped<IEpisodeService, EpisodeService>();
 builder.Services.AddScoped<IChapterService, ChapterService>();
 builder.Services.AddScoped<ICharacterService, CharacterService>();
-builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
+
 
 builder.Services.AddScoped<IStateMachineService, StateMachineService>();
 builder.Services.AddScoped<IProgressService, ProgressService>();
 
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<ICharacterVoteService, CharacterVoteService>();
-builder.Services.AddScoped<IValidator<CommentInsertRequest>, CommentInsertValidator>();
+
 builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddScoped<IFollowService, FollowService>();
 builder.Services.AddScoped<IFeedService, FeedService>();
+
+builder.Services.AddScoped<ISearchLogService, SearchLogService>();
 
 
 builder.Services.AddScoped<IValidator<UserListInsertRequest>, UserListInsertValidator>();
@@ -183,6 +185,7 @@ builder.Services.AddScoped<IAchievementService, AchievementService>();
 builder.Services.AddScoped<ICalendarService, CalendarService>();
 
 builder.Services.AddScoped<IStatisticsService, StatisticsService>();
+builder.Services.AddScoped<IRecommenderService, RecommenderService>();
 
 
 builder.Services.AddMemoryCache();

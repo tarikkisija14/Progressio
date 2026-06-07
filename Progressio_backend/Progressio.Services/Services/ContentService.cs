@@ -1,5 +1,6 @@
 ﻿using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Progressio.Model.Exceptions;
 using Progressio.Model.Requests.CRUDRequests;
 using Progressio.Model.Responses.CRUDResponses;
@@ -7,19 +8,38 @@ using Progressio.Model.SearchObjects;
 using Progressio.Services.Base;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
+using System.Text.Json;
 
 
 namespace Progressio.Services.Services
 {
     public class ContentService : BaseCRUDService<Content, ContentResponse, ContentSearchObject, ContentInsertRequest, ContentUpdateRequest>, IContentService
     {
+
+        private readonly ILogger<ContentService> _logger;
         public ContentService(
-       ApplicationDbContext db,
-       IValidator<ContentInsertRequest> insertValidator,
-       IValidator<ContentUpdateRequest> updateValidator)
-       : base(db, insertValidator, updateValidator)
+           ApplicationDbContext db,
+           IValidator<ContentInsertRequest> insertValidator,
+           IValidator<ContentUpdateRequest> updateValidator,
+           ILogger<ContentService> logger)
+           : base(db, insertValidator, updateValidator)
         {
+            _logger = logger;
         }
+
+        public override async Task<PagedResult<ContentResponse>> GetPagedAsync(ContentSearchObject search)
+        {
+            var result = await base.GetPagedAsync(search);
+
+            
+            if (search.RequestingUserId.HasValue)
+            {
+                await LogSearchAsync(search, result.TotalCount);
+            }
+
+            return result;
+        }
+
 
         protected override IQueryable<Content> ApplyIncludes(IQueryable<Content> query)
           => query
@@ -85,6 +105,39 @@ namespace Progressio.Services.Services
            
             entity.IsActive = false;
             return Task.CompletedTask;
+        }
+
+        private async Task LogSearchAsync(ContentSearchObject search, int resultCount)
+        {
+            try
+            {
+                
+                string? genreIdsJson = search.GenreId.HasValue
+                    ? JsonSerializer.Serialize(new[] { search.GenreId.Value })
+                    : null;
+
+                var log = new SearchLog
+                {
+                    UserId = search.RequestingUserId!.Value,
+                    Query = search.Title,
+                    GenreIds = genreIdsJson,
+                    ContentTypeId = search.ContentTypeId,
+                    Timestamp = DateTime.UtcNow,
+                    ResultCount = resultCount
+                };
+
+                _db.SearchLogs.Add(log);
+                await _db.SaveChangesAsync();
+
+                _logger.LogDebug(
+                    "SearchLog written for User {UserId}: query='{Query}' contentTypeId={ContentTypeId} genreId={GenreId} results={ResultCount}",
+                    search.RequestingUserId, search.Title, search.ContentTypeId, search.GenreId, resultCount);
+            }
+            catch (Exception ex)
+            {
+                
+                _logger.LogWarning(ex, "Failed to write SearchLog for User {UserId}", search.RequestingUserId);
+            }
         }
 
     }
