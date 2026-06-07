@@ -65,7 +65,7 @@ builder.Services.AddAuthentication(options =>
         ClockSkew = TimeSpan.Zero
     };
 
-   
+    // JWT from query string for SignalR WebSocket connections
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
@@ -175,7 +175,7 @@ builder.Services.AddScoped<ICharacterService, CharacterService>();
 builder.Services.AddScoped<IStateMachineService, StateMachineService>();
 builder.Services.AddScoped<IProgressService, ProgressService>();
 
-builder.Services.AddScoped<IReviewService, Progressio.Services.Services.ReviewService>(); 
+builder.Services.AddScoped<IReviewService, Progressio.Services.Services.ReviewService>();
 builder.Services.AddScoped<ICharacterVoteService, CharacterVoteService>();
 
 builder.Services.AddScoped<ICommentService, CommentService>();
@@ -198,10 +198,12 @@ builder.Services.AddScoped<IRecommenderService, RecommenderService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IExportService, ExportService>();
 
+// ─── Notification Service (Phase 16) ─────────────────────────────────────────
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 builder.Services.AddMemoryCache();
 
-// ─── RabbitMQ Publisher (Singleton — jedna konekcija) ─────────────────────────
+// ─── RabbitMQ Publisher (Singleton — one connection) ─────────────────────────
 builder.Services.AddSingleton<Progressio.Services.Messaging.IRabbitMqPublisher,
                                Progressio.Services.Messaging.RabbitMqPublisher>();
 
@@ -225,12 +227,12 @@ builder.Services.AddControllers();
 // ─── SignalR ──────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR();
 
-// ─── Static files (za profile image upload) ──────────────────────────────────
+// ─── Static files (for profile image upload) ─────────────────────────────────
 builder.Services.AddDirectoryBrowser();
 
 
 
-// ─── Swagger / OpenAPI sa JWT podrškom ───────────────────────────────────────
+// ─── Swagger / OpenAPI with JWT support ──────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -259,7 +261,7 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// ─── Migracije + Seed ────────────────────────────────────────────────────────
+// ─── Migrations + Seed ───────────────────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -282,7 +284,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// Static files za profile images
+// Static files for profile images
 app.UseStaticFiles();
 
 app.UseAuthentication();

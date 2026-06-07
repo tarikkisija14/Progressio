@@ -1,8 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR.Client;
-using Progressio.Model.Enums;
-using Progressio.Model.Messages;
-using Progressio.Services.Database;
-using Progressio.Services.Database.Entities;
+﻿using Progressio.Model.Messages;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
@@ -12,7 +8,6 @@ namespace Progressio.Worker.Consumers
 {
     public class NotificationConsumer : BackgroundService
     {
-        private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<NotificationConsumer> _logger;
         private readonly IConfiguration _configuration;
 
@@ -22,15 +17,12 @@ namespace Progressio.Worker.Consumers
         private const string QueueName = "send_notification";
         private const string DeadLetterQueue = "send_notification.dlq";
 
-        
         private static readonly int[] RetryDelaysMs = [1000, 2000, 4000, 8000];
 
         public NotificationConsumer(
-            IServiceScopeFactory scopeFactory,
             ILogger<NotificationConsumer> logger,
             IConfiguration configuration)
         {
-            _scopeFactory = scopeFactory;
             _logger = logger;
             _configuration = configuration;
         }
@@ -54,7 +46,7 @@ namespace Progressio.Worker.Consumers
                 autoDelete: false, arguments: null,
                 cancellationToken: cancellationToken);
 
-            // Glavna queue s x-dead-letter-exchange
+            // Main queue with x-dead-letter-exchange
             var mainArgs = new Dictionary<string, object?>
             {
                 ["x-dead-letter-exchange"] = "",
@@ -101,12 +93,12 @@ namespace Progressio.Worker.Consumers
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Greška pri obradi notification poruke (attempt {Attempt})", attempt + 1);
+                    _logger.LogError(ex, "Error processing notification message (attempt {Attempt})", attempt + 1);
 
                     if (attempt < RetryDelaysMs.Length)
                     {
                         int delayMs = RetryDelaysMs[attempt];
-                        _logger.LogWarning("Retry za notification poruku za {DelayMs}ms (attempt {Next}/{Max})",
+                        _logger.LogWarning("Retrying notification message in {DelayMs}ms (attempt {Next}/{Max})",
                             delayMs, attempt + 2, RetryDelaysMs.Length + 1);
 
                         await Task.Delay(delayMs, stoppingToken);
@@ -129,7 +121,7 @@ namespace Progressio.Worker.Consumers
                     }
                     else
                     {
-                        _logger.LogError("Notification poruka premještena u DLQ nakon {Max} pokušaja", RetryDelaysMs.Length + 1);
+                        _logger.LogError("Notification message moved to DLQ after {Max} attempts", RetryDelaysMs.Length + 1);
                         await _channel!.BasicNackAsync(ea.DeliveryTag, false, requeue: false,
                             cancellationToken: stoppingToken);
                     }
@@ -144,85 +136,58 @@ namespace Progressio.Worker.Consumers
 
         private async Task ProcessAsync(SendNotificationMessage message, CancellationToken ct)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-            var notifType = message.NotificationType switch
-            {
-                "Achievement" => NotificationType.Achievement,
-                "StatusChange" => NotificationType.StatusChanged,
-                "NewEpisode" => NotificationType.NewEpisode,
-                "NewChapter" => NotificationType.NewChapter,
-                "Follow" => NotificationType.NewFollower,
-                "CommentLiked" => NotificationType.CommentLiked,
-                "PaymentConfirmed" => NotificationType.PaymentConfirmed,
-                "ListInvite" => NotificationType.ListInvite,
-                _ => NotificationType.StatusChanged
-            };
-
-            db.Notifications.Add(new Notification
-            {
-                UserId = message.UserId,
-                Type = notifType,
-                Title = message.Title,
-                Message = message.Message,
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow,
-                RelatedEntityId = message.RelatedEntityId
-            });
-
-            await db.SaveChangesAsync(ct);
-            _logger.LogInformation("Notification kreirana za User {UserId}: {Title}", message.UserId, message.Title);
-
-            
-            await PushSignalRNotificationAsync(message, ct);
+            await PushViaApiAsync(message, ct);
         }
 
-        private async Task PushSignalRNotificationAsync(SendNotificationMessage message, CancellationToken ct)
+        private async Task PushViaApiAsync(SendNotificationMessage message, CancellationToken ct)
         {
             var apiBaseUrl = _configuration["Api:BaseUrl"];
             if (string.IsNullOrWhiteSpace(apiBaseUrl))
             {
-                _logger.LogWarning("Api:BaseUrl nije konfigurisan — SignalR push preskočen za User {UserId}", message.UserId);
+                _logger.LogWarning("Api:BaseUrl is not configured — SignalR push skipped for User {UserId}", message.UserId);
                 return;
             }
 
-            var hubUrl = $"{apiBaseUrl.TrimEnd('/')}/hubs/notifications";
+            var internalKey = _configuration["Api:InternalKey"];
+            if (string.IsNullOrWhiteSpace(internalKey))
+            {
+                _logger.LogWarning("Api:InternalKey is not configured — SignalR push skipped for User {UserId}", message.UserId);
+                return;
+            }
 
-            
-            var hubConnection = new HubConnectionBuilder()
-                .WithUrl(hubUrl, opts =>
-                {
-                    var internalKey = _configuration["Api:InternalKey"];
-                    if (!string.IsNullOrWhiteSpace(internalKey))
-                        opts.Headers.Add("X-Internal-Key", internalKey);
-                })
-                .WithAutomaticReconnect()
-                .Build();
+            var endpoint = $"{apiBaseUrl.TrimEnd('/')}/api/internal/notify";
+
+            var payload = new
+            {
+                userId = message.UserId,
+                title = message.Title,
+                message = message.Message,
+                notificationType = message.NotificationType,
+                relatedEntityId = message.RelatedEntityId
+            };
+
+            var json = JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("X-Internal-Key", internalKey);
 
             try
             {
-                await hubConnection.StartAsync(ct);
-
-                await hubConnection.InvokeAsync(
-                    "SendToUser",
-                    message.UserId,
-                    message.Title,
-                    message.Message,
-                    message.NotificationType,
-                    message.RelatedEntityId,
-                    cancellationToken: ct);
-
-                _logger.LogInformation("SignalR push poslan korisniku {UserId}: {Title}", message.UserId, message.Title);
+                var response = await httpClient.PostAsync(endpoint, content, ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("SignalR push completed for User {UserId}: {Title}", message.UserId, message.Title);
+                }
+                else
+                {
+                    _logger.LogWarning("Internal notify endpoint returned {StatusCode} for User {UserId}",
+                        response.StatusCode, message.UserId);
+                }
             }
             catch (Exception ex)
             {
-                
-                _logger.LogWarning(ex, "SignalR push nije uspio za User {UserId} — notifikacija je ipak snimljena u bazu", message.UserId);
-            }
-            finally
-            {
-                await hubConnection.DisposeAsync();
+                _logger.LogWarning(ex, "Failed to call internal notify endpoint for User {UserId} — notification was already saved to DB", message.UserId);
             }
         }
 

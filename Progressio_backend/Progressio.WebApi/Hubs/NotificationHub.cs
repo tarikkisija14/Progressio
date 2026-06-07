@@ -4,7 +4,6 @@ using System.Security.Claims;
 
 namespace Progressio.WebApi.Hubs
 {
-    
     [Authorize]
     public class NotificationHub : Hub
     {
@@ -21,7 +20,7 @@ namespace Progressio.WebApi.Hubs
             if (!string.IsNullOrEmpty(userId))
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"user-{userId}");
-                _logger.LogInformation("User {UserId} spojen na NotificationHub (ConnectionId: {ConnId})",
+                _logger.LogInformation("User {UserId} connected to NotificationHub (ConnectionId: {ConnId})",
                     userId, Context.ConnectionId);
             }
 
@@ -34,30 +33,10 @@ namespace Progressio.WebApi.Hubs
             if (!string.IsNullOrEmpty(userId))
             {
                 await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"user-{userId}");
-                _logger.LogInformation("User {UserId} odvojen od NotificationHub", userId);
+                _logger.LogInformation("User {UserId} disconnected from NotificationHub", userId);
             }
 
             await base.OnDisconnectedAsync(exception);
-        }
-
-       
-        public async Task SendToUser(
-            int userId,
-            string title,
-            string message,
-            string notificationType,
-            int? relatedEntityId)
-        {
-            await Clients.Group($"user-{userId}").SendAsync("ReceiveNotification", new
-            {
-                title,
-                message,
-                notificationType,
-                relatedEntityId,
-                createdAt = DateTime.UtcNow
-            });
-
-            _logger.LogInformation("Notifikacija poslana u grupu user-{UserId}: {Title}", userId, title);
         }
     }
 }
