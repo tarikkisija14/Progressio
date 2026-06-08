@@ -1,7 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Progressio.Model.Enums;
 using Progressio.Model.Responses.AdminResponses;
+using Progressio.Model.SearchObjects;
 using Progressio.Services.Database;
 using System;
 using System.Collections.Generic;
@@ -237,6 +239,128 @@ namespace Progressio.Services.Services
 
             _cache.Set(AchievementStatsCacheKey, result, CacheTtl);
             return result;
+        }
+
+        public async Task<PagedResult<AdminSubscriptionResponse>> GetSubscriptionsAsync(AdminSubscriptionSearchObject search)
+        {
+            var query = _db.Subscriptions
+                .Include(s => s.User)
+                .Include(s => s.Payments)
+                .AsQueryable();
+
+            if (search.UserId.HasValue)
+                query = query.Where(s => s.UserId == search.UserId.Value);
+
+            if (!string.IsNullOrWhiteSpace(search.PlanType))
+                query = query.Where(s => s.PlanType.ToString() == search.PlanType);
+
+            if (!string.IsNullOrWhiteSpace(search.Status))
+                query = query.Where(s => s.Status.ToString() == search.Status);
+
+            var totalCount = await query.CountAsync();
+
+            var now = DateTime.UtcNow;
+
+            var items = await query
+                .OrderByDescending(s => s.StartDate)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
+                .Select(s => new AdminSubscriptionResponse
+                {
+                    Id = s.Id,
+                    UserId = s.UserId,
+                    Username = s.User.UserName ?? string.Empty,
+                    UserFullName = s.User.FirstName + " " + s.User.LastName,
+                    UserEmail = s.User.Email ?? string.Empty,
+                    PlanType = s.PlanType.ToString(),
+                    Status = s.Status.ToString(),
+                    StartDate = s.StartDate,
+                    EndDate = s.EndDate,
+                    AutoRenew = s.AutoRenew,
+                    IsPremium = s.Status == SubscriptionStatus.Active && s.EndDate > now,
+                    StripePaymentIntentId = s.Payments
+                        .OrderByDescending(p => p.PaidAt)
+                        .Select(p => p.StripePaymentIntentId)
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            return new PagedResult<AdminSubscriptionResponse>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
+        }
+
+        public async Task<PagedResult<AdminUserResponse>> GetUsersAsync(AdminUserSearchObject search)
+        {
+            var query = _db.Users.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search.SearchQuery))
+            {
+                var q = search.SearchQuery.Trim().ToLower();
+                query = query.Where(u =>
+                    u.UserName!.ToLower().Contains(q) ||
+                    u.Email!.ToLower().Contains(q) ||
+                    u.FirstName.ToLower().Contains(q) ||
+                    u.LastName.ToLower().Contains(q));
+            }
+
+            if (search.IsActive.HasValue)
+                query = query.Where(u => u.IsActive == search.IsActive.Value);
+
+            var now = DateTime.UtcNow;
+
+            if (search.IsPremium.HasValue)
+            {
+                if (search.IsPremium.Value)
+                    query = query.Where(u => u.Subscriptions
+                        .Any(s => s.Status == SubscriptionStatus.Active && s.EndDate > now));
+                else
+                    query = query.Where(u => !u.Subscriptions
+                        .Any(s => s.Status == SubscriptionStatus.Active && s.EndDate > now));
+            }
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderByDescending(u => u.CreatedAt)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
+                .Select(u => new AdminUserResponse
+                {
+                    Id = u.Id,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    Username = u.UserName ?? string.Empty,
+                    Email = u.Email ?? string.Empty,
+                    ProfileImageUrl = u.ProfileImageUrl,
+                    IsProfilePublic = u.IsProfilePublic,
+                    IsActive = u.IsActive,
+                    IsPremium = u.Subscriptions
+                        .Any(s => s.Status == SubscriptionStatus.Active && s.EndDate > now),
+                    ActivePlanType = u.Subscriptions
+                        .Where(s => s.Status == SubscriptionStatus.Active && s.EndDate > now)
+                        .OrderByDescending(s => s.EndDate)
+                        .Select(s => s.PlanType.ToString())
+                        .FirstOrDefault(),
+                    CreatedAt = u.CreatedAt,
+                    TotalCompleted = u.ContentProgresses
+                        .Count(p => p.Status == ProgressStatus.Completed),
+                    TotalInProgress = u.ContentProgresses
+                        .Count(p => p.Status == ProgressStatus.InProgress)
+                })
+                .ToListAsync();
+
+            return new PagedResult<AdminUserResponse>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
         }
     }
 }

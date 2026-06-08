@@ -18,7 +18,6 @@ using System.Threading.Tasks;
 namespace Progressio.Services.Services
 {
     public class CommentService : ICommentService
-
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<CommentService> _logger;
@@ -42,14 +41,24 @@ namespace Progressio.Services.Services
             _updateValidator = updateValidator;
             _publisher = publisher;
         }
+
         public async Task<PagedResult<CommentResponse>> GetCommentsAsync(
-        CommentSearchObject searchObject,
-        int? currentUserId)
+            CommentSearchObject searchObject,
+            int? currentUserId)
         {
             var query = _db.ContentComments
                 .Include(c => c.User)
-                .Where(c => c.IsVisible)
+                .Include(c => c.Episode)
+                .Include(c => c.Chapter)
                 .AsQueryable();
+
+            // Admin može vidjeti skrivene komentare kad postavi IncludeHidden=true ili IsVisible=false
+            if (!searchObject.IncludeHidden)
+                query = query.Where(c => c.IsVisible);
+
+            // Admin filter po vidljivosti
+            if (searchObject.IsVisible.HasValue)
+                query = query.Where(c => c.IsVisible == searchObject.IsVisible.Value);
 
             if (searchObject.EpisodeId.HasValue)
                 query = query.Where(c => c.EpisodeId == searchObject.EpisodeId.Value);
@@ -62,6 +71,14 @@ namespace Progressio.Services.Services
 
             if (searchObject.HideSpoilers)
                 query = query.Where(c => !c.HasSpoiler);
+
+            // Admin filter po spoiler flagu
+            if (searchObject.HasSpoiler.HasValue)
+                query = query.Where(c => c.HasSpoiler == searchObject.HasSpoiler.Value);
+
+            // Admin filter po korisniku
+            if (searchObject.UserId.HasValue)
+                query = query.Where(c => c.UserId == searchObject.UserId.Value);
 
             var totalCount = await query.CountAsync();
 
@@ -79,9 +96,9 @@ namespace Progressio.Services.Services
             {
                 var commentIds = items.Select(c => c.Id).ToList();
                 likedCommentIds = [.. await _db.CommentLikes
-                .Where(l => l.UserId == currentUserId.Value && commentIds.Contains(l.ContentCommentId))
-                .Select(l => l.ContentCommentId)
-                .ToListAsync()];
+                    .Where(l => l.UserId == currentUserId.Value && commentIds.Contains(l.ContentCommentId))
+                    .Select(l => l.ContentCommentId)
+                    .ToListAsync()];
             }
 
             var responses = items.Select(c => new CommentResponse
@@ -89,10 +106,13 @@ namespace Progressio.Services.Services
                 Id = c.Id,
                 UserId = c.UserId,
                 UserFullName = c.User.FirstName + " " + c.User.LastName,
+                Username = c.User.UserName ?? string.Empty,
                 UserProfileImageUrl = c.User.ProfileImageUrl,
                 ContentId = c.ContentId,
                 EpisodeId = c.EpisodeId,
+                EpisodeTitle = c.Episode != null ? c.Episode.Title : null,
                 ChapterId = c.ChapterId,
+                ChapterTitle = c.Chapter != null ? c.Chapter.Title : null,
                 Text = c.Text,
                 HasSpoiler = c.HasSpoiler,
                 LikeCount = c.LikeCount,
@@ -109,6 +129,7 @@ namespace Progressio.Services.Services
                 PageSize = pageSize
             };
         }
+
         public async Task<CommentResponse> AddCommentAsync(int userId, CommentInsertRequest request)
         {
             var validationResult = await _insertValidator.ValidateAsync(request);
@@ -177,10 +198,13 @@ namespace Progressio.Services.Services
                 Id = comment.Id,
                 UserId = comment.UserId,
                 UserFullName = (user?.FirstName ?? "") + " " + (user?.LastName ?? ""),
+                Username = user?.UserName ?? string.Empty,
                 UserProfileImageUrl = user?.ProfileImageUrl,
                 ContentId = comment.ContentId,
                 EpisodeId = comment.EpisodeId,
+                EpisodeTitle = null,
                 ChapterId = comment.ChapterId,
+                ChapterTitle = null,
                 Text = comment.Text,
                 HasSpoiler = comment.HasSpoiler,
                 LikeCount = comment.LikeCount,
@@ -198,6 +222,8 @@ namespace Progressio.Services.Services
 
             var comment = await _db.ContentComments
                 .Include(c => c.User)
+                .Include(c => c.Episode)
+                .Include(c => c.Chapter)
                 .FirstOrDefaultAsync(c => c.Id == commentId && c.IsVisible)
                 ?? throw new NotFoundException("Comment", commentId);
 
@@ -221,10 +247,13 @@ namespace Progressio.Services.Services
                 Id = comment.Id,
                 UserId = comment.UserId,
                 UserFullName = comment.User.FirstName + " " + comment.User.LastName,
+                Username = comment.User.UserName ?? string.Empty,
                 UserProfileImageUrl = comment.User.ProfileImageUrl,
                 ContentId = comment.ContentId,
                 EpisodeId = comment.EpisodeId,
+                EpisodeTitle = comment.Episode?.Title,
                 ChapterId = comment.ChapterId,
+                ChapterTitle = comment.Chapter?.Title,
                 Text = comment.Text,
                 HasSpoiler = comment.HasSpoiler,
                 LikeCount = comment.LikeCount,
@@ -278,6 +307,7 @@ namespace Progressio.Services.Services
                 }
             }
         }
+
         public async Task DeleteCommentAsync(int userId, int commentId, bool isAdmin)
         {
             var comment = await _db.ContentComments
@@ -294,6 +324,5 @@ namespace Progressio.Services.Services
                 "Comment {CommentId} soft-deleted by {Actor} (isAdmin={IsAdmin})",
                 commentId, userId, isAdmin);
         }
-
     }
 }

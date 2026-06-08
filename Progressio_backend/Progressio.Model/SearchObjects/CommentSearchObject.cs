@@ -12,5 +12,10 @@ namespace Progressio.Model.SearchObjects
         public int? ChapterId { get; set; }
         public int? ContentId { get; set; }
         public bool HideSpoilers { get; set; }
+
+        public bool? HasSpoiler { get; set; }
+        public bool? IsVisible { get; set; }
+        public int? UserId { get; set; }
+        public bool IncludeHidden { get; set; } = false;
     }
 }

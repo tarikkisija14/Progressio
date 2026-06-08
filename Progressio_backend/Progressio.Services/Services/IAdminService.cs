@@ -1,4 +1,5 @@
 ﻿using Progressio.Model.Responses.AdminResponses;
+using Progressio.Model.SearchObjects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,5 +16,7 @@ namespace Progressio.Services.Services
         Task<ActiveUsersResponse> GetActiveUsersAsync();
         Task<List<UpcomingReleaseResponse>> GetUpcomingReleasesAsync();
         Task<AchievementStatsResponse> GetAchievementStatsAsync();
+        Task<PagedResult<AdminSubscriptionResponse>> GetSubscriptionsAsync(AdminSubscriptionSearchObject search);
+        Task<PagedResult<AdminUserResponse>> GetUsersAsync(AdminUserSearchObject search);
     }
 }
