@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:progressio_desktop/screens/content_list_screen.dart';
+import 'package:progressio_desktop/screens/season_list_screen.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/screens/chapter_list_screen.dart';
+import 'package:progressio_desktop/screens/character_list_screen.dart';
+import 'package:progressio_desktop/screens/episode_comment_list_screen.dart';
+import 'package:progressio_desktop/screens/user_list_screen.dart';
+import 'package:progressio_desktop/screens/subscription_list_screen.dart';
+
 
 class MasterScreen extends StatelessWidget {
   const MasterScreen({super.key, required this.child, required this.title});
@@ -73,16 +81,50 @@ class MasterScreen extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
-                  _navSection('Navigation'),
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.home,
-                        color: AppColors.textSecondary, size: 20),
-                    title: const Text('Home',
-                        style: TextStyle(
-                            color: AppColors.textSecondary, fontSize: 14)),
-                    onTap: () => Navigator.pop(context),
+                  _navSection('Content'),
+                  _navItem(
+                    context: context,
+                    icon: Icons.movie,
+                    label: 'Content',
+                    screen: const ContentListScreen(),
                   ),
+                  _navItem(
+                    context: context,
+                    icon: Icons.view_list,
+                    label: 'Seasons & Episodes',
+                    screen: const SeasonListScreen(),
+                  ),
+                  _navItem(
+                    context: context,
+                    icon: Icons.menu_book,
+                    label: 'Chapters',
+                    screen: const ChapterListScreen(),
+                  ),
+                  _navItem(
+                  context: context,
+                  icon: Icons.people,
+                  label: 'Characters',
+                  screen: const CharacterListScreen(),
+                 ),
+                 _navItem(
+                   context: context,
+                   icon: Icons.comment,
+                   label: 'Comments',
+                   screen: const EpisodeCommentListScreen(),
+                  ),
+                  _navSection('Users'),
+                  _navItem(
+                   context: context,
+                   icon: Icons.person,
+                   label: 'Users',
+                   screen: const UserListScreen(),
+                  ),
+                  _navItem(
+                  context: context,
+                  icon: Icons.credit_card,
+                  label: 'Subscriptions',
+                  screen: const SubscriptionListScreen(),
+                ),
                 ],
               ),
             ),
@@ -105,6 +147,30 @@ class MasterScreen extends StatelessWidget {
           letterSpacing: 1.2,
         ),
       ),
+    );
+  }
+
+  Widget _navItem({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required Widget screen,
+  }) {
+    return ListTile(
+      dense: true,
+      leading: Icon(icon, color: AppColors.textSecondary, size: 20),
+      title: Text(
+        label,
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+      ),
+      hoverColor: AppColors.card,
+      onTap: () {
+        Navigator.pop(context);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => screen),
+        );
+      },
     );
   }
 }

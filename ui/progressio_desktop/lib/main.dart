@@ -12,6 +12,14 @@ import 'package:progressio_desktop/providers/age_rating_provider.dart';
 import 'package:progressio_desktop/providers/language_provider.dart';
 import 'package:progressio_desktop/screens/content_list_screen.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/providers/season_provider.dart';
+import 'package:progressio_desktop/providers/episode_provider.dart';
+import 'package:progressio_desktop/providers/chapter_provider.dart';
+import 'package:progressio_desktop/providers/character_provider.dart';
+import 'package:progressio_desktop/providers/comment_provider.dart';
+import 'package:progressio_desktop/providers/user_provider.dart';
+import 'package:progressio_desktop/providers/subscription_provider.dart';
+
 void main() {
   runApp(
     MultiProvider(
@@ -21,6 +29,15 @@ void main() {
         ChangeNotifierProvider(create: (_) => GenreProvider()),
         ChangeNotifierProvider(create: (_) => AgeRatingProvider()),
         ChangeNotifierProvider(create: (_) => LanguageProvider()),
+        ChangeNotifierProvider(create: (_) => SeasonProvider()),
+        ChangeNotifierProvider(create: (_) => EpisodeProvider()),
+        ChangeNotifierProvider(create: (_) => ChapterProvider()),
+        ChangeNotifierProvider(create: (_) => CharacterProvider()),
+        ChangeNotifierProvider(create: (_) => CommentProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => SubscriptionProvider()),
+
+
       ],
       child: const ProgressioAdminApp(),
     ),
