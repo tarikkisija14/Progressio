@@ -7,6 +7,10 @@ import 'package:progressio_desktop/screens/character_list_screen.dart';
 import 'package:progressio_desktop/screens/episode_comment_list_screen.dart';
 import 'package:progressio_desktop/screens/user_list_screen.dart';
 import 'package:progressio_desktop/screens/subscription_list_screen.dart';
+import 'package:progressio_desktop/screens/achievement_list_screen.dart';
+import 'package:progressio_desktop/screens/genre_screen.dart';
+import 'package:progressio_desktop/screens/content_type_screen.dart';
+
 
 
 class MasterScreen extends StatelessWidget {
@@ -124,6 +128,25 @@ class MasterScreen extends StatelessWidget {
                   icon: Icons.credit_card,
                   label: 'Subscriptions',
                   screen: const SubscriptionListScreen(),
+                ),
+                _navItem(
+                  context: context,
+                  icon: Icons.emoji_events,
+                  label: 'Achievements',
+                  screen: const AchievementListScreen(),
+                 ),
+                 _navSection('Reference'),
+                 _navItem(
+                 context: context,
+                 icon: Icons.category,
+                 label: 'Genres',
+                 screen: const GenreScreen(),
+                ),
+               _navItem(
+                context: context,
+                icon: Icons.list_alt,
+                label: 'Content Types',
+                screen: const ContentTypeScreen(),
                 ),
                 ],
               ),

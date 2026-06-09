@@ -1,12 +1,8 @@
 import 'package:progressio_desktop/model/user.dart';
 import 'package:progressio_desktop/providers/base_provider.dart';
 
-// NOTE: Backend does not expose a GET /api/users (admin list) endpoint.
-// The getProfile method uses GET /api/users/{id}/profile which exists.
-// A proper admin user listing endpoint (GET /api/admin/users) is required
-// on the backend for full functionality.
 class UserProvider extends BaseProvider<AppUser> {
-  UserProvider() : super('users');
+  UserProvider() : super('admin/users');
 
   @override
   AppUser fromJson(dynamic json) => AppUser.fromJson(json);

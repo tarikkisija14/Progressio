@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:progressio_desktop/layouts/master_screen.dart';
+import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/model/user.dart';
 import 'package:progressio_desktop/providers/user_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
@@ -17,45 +18,118 @@ class UserListScreen extends StatefulWidget {
 class _UserListScreenState extends State<UserListScreen> {
   late UserProvider _userProvider;
 
-  final _idController = TextEditingController();
-  AppUser? _user;
+  final _searchController = TextEditingController();
+  SearchResult<AppUser>? _result;
   bool _loading = false;
-  String? _error;
+  int _page = 1;
+  static const int _pageSize = 20;
+  bool? _filterIsActive;
+  bool? _filterIsPremium;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _userProvider = context.read<UserProvider>();
+      _search();
     });
   }
 
   @override
   void dispose() {
-    _idController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _lookupUser() async {
-    final id = int.tryParse(_idController.text.trim());
-    if (id == null) {
-      setState(() => _error = 'Please enter a valid user ID.');
-      return;
-    }
+  Future<void> _search({int page = 1}) async {
     setState(() {
       _loading = true;
-      _error = null;
-      _user = null;
+      _page = page;
     });
     try {
-      final user = await _userProvider.getProfile(id);
-      setState(() => _user = user);
+      final result = await _userProvider.get(
+        filter: {
+          'page': page,
+          'pageSize': _pageSize,
+          if (_searchController.text.trim().isNotEmpty)
+            'searchQuery': _searchController.text.trim(),
+          if (_filterIsActive != null) 'isActive': _filterIsActive,
+          if (_filterIsPremium != null) 'isPremium': _filterIsPremium,
+        },
+      );
+      setState(() => _result = result);
     } catch (e) {
-      setState(() => _error = 'User not found or error: $e');
+      _showError(e.toString());
     } finally {
       setState(() => _loading = false);
     }
   }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: AppColors.error),
+    );
+  }
+
+  void _showUserDetail(AppUser user) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: Row(
+          children: [
+            _buildAvatar(user, size: 36),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(user.fullName,
+                      style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
+                  Text('@${user.username}',
+                      style: const TextStyle(
+                          color: AppColors.primary, fontSize: 13)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Divider(color: AppColors.divider),
+              _infoRow('ID', '#${user.id}'),
+              _infoRow('Email', user.email),
+              _infoRow('Member Since', formatDate(user.createdAt)),
+              _infoRow('Status', user.isActive ? 'Active' : 'Inactive'),
+              _infoRow('Premium', user.isPremium ? 'Yes' : 'No'),
+              _infoRow('Plan', user.activePlanType ?? '-'),
+              _infoRow('Completed', '${user.totalCompleted}'),
+              _infoRow('In Progress', '${user.totalInProgress}'),
+              _infoRow('Profile',
+                  user.isProfilePublic ? 'Public' : 'Private'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close',
+                style: TextStyle(color: AppColors.textMuted)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int get _totalPages =>
+      ((_result?.totalCount ?? 0) / _pageSize).ceil();
 
   @override
   Widget build(BuildContext context) {
@@ -63,195 +137,196 @@ class _UserListScreenState extends State<UserListScreen> {
       title: 'Users',
       child: Column(
         children: [
-          _buildNotice(),
+          _buildToolbar(),
           const Divider(height: 1, color: AppColors.divider),
-          _buildLookup(),
-          const Divider(height: 1, color: AppColors.divider),
-          Expanded(child: _buildContent()),
+          Expanded(child: _loading ? _buildLoading() : _buildTable()),
+          if ((_result?.totalCount ?? 0) > _pageSize) _buildPagination(),
         ],
       ),
     );
   }
 
-  Widget _buildNotice() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: AppColors.warning.withOpacity(0.1),
-      child: Row(
-        children: [
-          const Icon(Icons.info_outline, color: AppColors.warning, size: 16),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-              'Backend does not expose a user list endpoint. '
-              'Users can be looked up individually by ID via GET /api/users/{id}/profile. '
-              'A GET /api/admin/users endpoint is required for full admin listing.',
-              style: TextStyle(color: AppColors.warning, fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLookup() {
+  Widget _buildToolbar() {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          SizedBox(
-            width: 200,
+          Expanded(
             child: TextField(
-              controller: _idController,
+              controller: _searchController,
               style: const TextStyle(color: AppColors.textPrimary),
-              keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'User ID',
-                prefixIcon: Icon(Icons.person_search,
-                    color: AppColors.textMuted),
+                hintText: 'Search by name, username, email...',
+                prefixIcon:
+                    Icon(Icons.search, color: AppColors.textMuted),
               ),
-              onSubmitted: (_) => _lookupUser(),
+              onSubmitted: (_) => _search(),
             ),
           ),
           const SizedBox(width: 12),
-          ElevatedButton.icon(
-            onPressed: _loading ? null : _lookupUser,
-            icon: const Icon(Icons.search, size: 18),
-            label: const Text('Lookup User'),
+          _filterDropdown<bool?>(
+            value: _filterIsActive,
+            hint: 'Status',
+            items: const [
+              DropdownMenuItem(value: null, child: Text('All')),
+              DropdownMenuItem(value: true, child: Text('Active')),
+              DropdownMenuItem(value: false, child: Text('Inactive')),
+            ],
+            onChanged: (v) {
+              setState(() => _filterIsActive = v);
+              _search();
+            },
           ),
-          if (_error != null) ...[
-            const SizedBox(width: 16),
-            Text(_error!,
-                style: const TextStyle(color: AppColors.error, fontSize: 13)),
-          ],
+          const SizedBox(width: 8),
+          _filterDropdown<bool?>(
+            value: _filterIsPremium,
+            hint: 'Plan',
+            items: const [
+              DropdownMenuItem(value: null, child: Text('All')),
+              DropdownMenuItem(value: true, child: Text('Premium')),
+              DropdownMenuItem(value: false, child: Text('Free')),
+            ],
+            onChanged: (v) {
+              setState(() => _filterIsPremium = v);
+              _search();
+            },
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: () => _search(),
+            icon: const Icon(Icons.search, size: 18),
+            label: const Text('Search'),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildContent() {
-    if (_loading) {
-      return const Center(
-          child: CircularProgressIndicator(color: AppColors.primary));
-    }
-    if (_user == null) {
-      return const Center(
-        child: Text(
-          'Enter a user ID above to look up a user.',
-          style: TextStyle(color: AppColors.textMuted),
-        ),
-      );
-    }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: _buildUserCard(_user!),
-    );
-  }
-
-  Widget _buildUserCard(AppUser user) {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 600),
-        child: Card(
-          color: AppColors.card,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _buildAvatar(user),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            user.fullName,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text('@${user.username}',
-                              style: const TextStyle(
-                                  color: AppColors.primary, fontSize: 14)),
-                          const SizedBox(height: 4),
-                          Text(user.email,
-                              style: const TextStyle(
-                                  color: AppColors.textMuted, fontSize: 13)),
-                        ],
-                      ),
+  Widget _filterDropdown<T>({
+    required T value,
+    required String hint,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          dropdownColor: AppColors.card,
+          hint: Text(hint,
+              style: const TextStyle(color: AppColors.textMuted)),
+          items: items
+              .map((item) => DropdownMenuItem<T>(
+                    value: item.value,
+                    child: DefaultTextStyle(
+                      style: const TextStyle(
+                          color: AppColors.textSecondary),
+                      child: item.child!,
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        if (user.isPremium) _badge('Premium', AppColors.premium),
-                        const SizedBox(height: 4),
-                        _badge(
-                          user.isProfilePublic ? 'Public' : 'Private',
-                          user.isProfilePublic
-                              ? AppColors.success
-                              : AppColors.textMuted,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                const Divider(color: AppColors.divider),
-                const SizedBox(height: 12),
-                _infoRow('User ID', '#${user.id}'),
-                _infoRow('Member Since', formatDate(user.createdAt)),
-                _infoRow('Profile Visibility',
-                    user.isProfilePublic ? 'Public' : 'Private'),
-                _infoRow('Premium', user.isPremium ? 'Yes' : 'No'),
-              ],
-            ),
-          ),
+                  ))
+              .toList(),
+          onChanged: onChanged,
         ),
       ),
     );
   }
 
-  Widget _buildAvatar(AppUser user) {
-    if (user.profileImageUrl != null && user.profileImageUrl!.isNotEmpty) {
+  Widget _buildLoading() {
+    return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary));
+  }
+
+  Widget _buildTable() {
+    final items = _result?.items ?? [];
+    if (items.isEmpty) {
+      return const Center(
+        child: Text('No users found.',
+            style: TextStyle(color: AppColors.textMuted)),
+      );
+    }
+    return SingleChildScrollView(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: const [
+            DataColumn(label: Text('')),
+            DataColumn(label: Text('Name')),
+            DataColumn(label: Text('Username')),
+            DataColumn(label: Text('Email')),
+            DataColumn(label: Text('Status')),
+            DataColumn(label: Text('Plan')),
+            DataColumn(label: Text('Completed')),
+            DataColumn(label: Text('Joined')),
+          ],
+          rows: items.map((u) => _buildRow(u)).toList(),
+        ),
+      ),
+    );
+  }
+
+  DataRow _buildRow(AppUser u) {
+    return DataRow(
+      onSelectChanged: (_) => _showUserDetail(u),
+      cells: [
+        DataCell(_buildAvatar(u, size: 32)),
+        DataCell(Text(u.fullName,
+            style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w500))),
+        DataCell(Text('@${u.username}',
+            style: const TextStyle(color: AppColors.primary))),
+        DataCell(Text(u.email,
+            style: const TextStyle(color: AppColors.textMuted))),
+        DataCell(_statusChip(u.isActive)),
+        DataCell(_planChip(u.isPremium, u.activePlanType)),
+        DataCell(Text('${u.totalCompleted}',
+            style: const TextStyle(color: AppColors.textSecondary))),
+        DataCell(Text(formatDate(u.createdAt),
+            style: const TextStyle(
+                color: AppColors.textMuted, fontSize: 12))),
+      ],
+    );
+  }
+
+  Widget _buildAvatar(AppUser user, {double size = 36}) {
+    if (user.profileImageUrl != null &&
+        user.profileImageUrl!.isNotEmpty) {
       return ClipOval(
         child: CachedNetworkImage(
           imageUrl: user.profileImageUrl!,
-          width: 64,
-          height: 64,
+          width: size,
+          height: size,
           fit: BoxFit.cover,
-          placeholder: (_, __) =>
-              Container(width: 64, height: 64, color: AppColors.divider),
-          errorWidget: (_, __, ___) => _defaultAvatar(user),
+          placeholder: (_, __) => _defaultAvatar(user, size),
+          errorWidget: (_, __, ___) => _defaultAvatar(user, size),
         ),
       );
     }
-    return _defaultAvatar(user);
+    return _defaultAvatar(user, size);
   }
 
-  Widget _defaultAvatar(AppUser user) {
+  Widget _defaultAvatar(AppUser user, double size) {
     return Container(
-      width: 64,
-      height: 64,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: AppColors.primary.withOpacity(0.2),
         shape: BoxShape.circle,
       ),
       child: Center(
         child: Text(
-          user.firstName.isNotEmpty ? user.firstName[0].toUpperCase() : '?',
-          style: const TextStyle(
+          user.firstName.isNotEmpty
+              ? user.firstName[0].toUpperCase()
+              : '?',
+          style: TextStyle(
             color: AppColors.primary,
-            fontSize: 24,
+            fontSize: size * 0.4,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -259,34 +334,95 @@ class _UserListScreenState extends State<UserListScreen> {
     );
   }
 
+  Widget _statusChip(bool isActive) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: isActive
+            ? AppColors.success.withOpacity(0.15)
+            : AppColors.error.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        isActive ? 'Active' : 'Inactive',
+        style: TextStyle(
+            color: isActive ? AppColors.success : AppColors.error,
+            fontSize: 12),
+      ),
+    );
+  }
+
+  Widget _planChip(bool isPremium, String? planType) {
+    if (!isPremium) {
+      return const Text('Free',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.premium.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        planType ?? 'Premium',
+        style: const TextStyle(color: AppColors.premium, fontSize: 12),
+      ),
+    );
+  }
+
   Widget _infoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
           SizedBox(
-            width: 160,
+            width: 130,
             child: Text(label,
                 style: const TextStyle(
                     color: AppColors.textMuted, fontSize: 13)),
           ),
-          Text(value,
-              style: const TextStyle(
-                  color: AppColors.textPrimary, fontSize: 13)),
+          Expanded(
+            child: Text(value,
+                style: const TextStyle(
+                    color: AppColors.textPrimary, fontSize: 13)),
+          ),
         ],
       ),
     );
   }
 
-  Widget _badge(String label, Color color) {
+  Widget _buildPagination() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: AppColors.surface,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('Total: ${_result?.totalCount ?? 0} users',
+              style: const TextStyle(
+                  color: AppColors.textMuted, fontSize: 13)),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left,
+                    color: AppColors.textSecondary),
+                onPressed:
+                    _page > 1 ? () => _search(page: _page - 1) : null,
+              ),
+              Text('Page $_page of $_totalPages',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary)),
+              IconButton(
+                icon: const Icon(Icons.chevron_right,
+                    color: AppColors.textSecondary),
+                onPressed: _page < _totalPages
+                    ? () => _search(page: _page + 1)
+                    : null,
+              ),
+            ],
+          ),
+        ],
       ),
-      child: Text(label,
-          style: TextStyle(color: color, fontSize: 12)),
     );
   }
 }

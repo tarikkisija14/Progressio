@@ -6,8 +6,12 @@ class AppUser {
   final String email;
   final String? profileImageUrl;
   final bool isProfilePublic;
+  final bool isActive;
   final bool isPremium;
+  final String? activePlanType;
   final DateTime createdAt;
+  final int totalCompleted;
+  final int totalInProgress;
 
   AppUser({
     this.id = 0,
@@ -17,8 +21,12 @@ class AppUser {
     this.email = '',
     this.profileImageUrl,
     this.isProfilePublic = true,
+    this.isActive = true,
     this.isPremium = false,
+    this.activePlanType,
     DateTime? createdAt,
+    this.totalCompleted = 0,
+    this.totalInProgress = 0,
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get fullName => '$firstName $lastName'.trim();
@@ -32,10 +40,14 @@ class AppUser {
       email: json['email'] ?? '',
       profileImageUrl: json['profileImageUrl'],
       isProfilePublic: json['isProfilePublic'] ?? true,
+      isActive: json['isActive'] ?? true,
       isPremium: json['isPremium'] ?? false,
+      activePlanType: json['activePlanType'],
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'])
           : DateTime.now(),
+      totalCompleted: json['totalCompleted'] ?? 0,
+      totalInProgress: json['totalInProgress'] ?? 0,
     );
   }
 }
