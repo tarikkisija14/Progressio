@@ -12,6 +12,8 @@ import 'package:progressio_desktop/screens/genre_screen.dart';
 import 'package:progressio_desktop/screens/content_type_screen.dart';
 import 'package:progressio_desktop/screens/country_screen.dart';
 import 'package:progressio_desktop/screens/platform_screen.dart';
+import 'package:progressio_desktop/screens/report_screen.dart';
+import 'package:progressio_desktop/screens/stats_dashboard_screen.dart';
 
 
 
@@ -162,6 +164,19 @@ class MasterScreen extends StatelessWidget {
                label: 'Platforms',
                screen: const PlatformScreen(),
               ),
+              _navSection('Analytics'),
+_navItem(
+  context: context,
+  icon: Icons.dashboard_rounded,
+  label: 'Stats Dashboard',
+  screen: const StatsDashboardScreen(),
+),
+_navItem(
+  context: context,
+  icon: Icons.picture_as_pdf_rounded,
+  label: 'Reports',
+  screen: const ReportScreen(),
+)
                 ],
               ),
             ),
