@@ -22,6 +22,7 @@ import 'package:progressio_desktop/providers/subscription_provider.dart';
 import 'package:progressio_desktop/providers/achievement_provider.dart';
 import 'package:progressio_desktop/providers/country_provider.dart';
 import 'package:progressio_desktop/providers/city_provider.dart';
+import 'package:progressio_desktop/providers/platform_provider.dart';
 
 void main() {
   runApp(
@@ -42,6 +43,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => AchievementProvider()),
         ChangeNotifierProvider(create: (_) => CountryProvider()),
         ChangeNotifierProvider(create: (_) => CityProvider()),
+        ChangeNotifierProvider(create: (_) => PlatformProvider()),
 
 
 
