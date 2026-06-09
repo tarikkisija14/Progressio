@@ -10,6 +10,7 @@ import 'package:progressio_desktop/screens/subscription_list_screen.dart';
 import 'package:progressio_desktop/screens/achievement_list_screen.dart';
 import 'package:progressio_desktop/screens/genre_screen.dart';
 import 'package:progressio_desktop/screens/content_type_screen.dart';
+import 'package:progressio_desktop/screens/country_screen.dart';
 
 
 
@@ -148,6 +149,12 @@ class MasterScreen extends StatelessWidget {
                 label: 'Content Types',
                 screen: const ContentTypeScreen(),
                 ),
+                _navItem(
+               context: context,
+               icon: Icons.flag,
+               label: 'Countries & Cities',
+               screen: const CountryScreen(),
+),
                 ],
               ),
             ),
