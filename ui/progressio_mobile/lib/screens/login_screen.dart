@@ -23,7 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   static const _baseUrl = String.fromEnvironment(
     'baseUrl',
-    defaultValue: 'https://10.0.2.2:7204/api/',
+     defaultValue: 'https://localhost:7204/api/',
   );
 
   @override
@@ -72,8 +72,14 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       } else {
-        final data = jsonDecode(response.body);
-        setState(() => _error = data['message'] ?? 'Invalid credentials.');
+          String message = 'Invalid credentials.';
+
+  try {
+    final data = jsonDecode(response.body);
+    message = data['message'] ?? message;
+  } catch (_) {}
+
+  setState(() => _error = message);
       }
     } catch (e) {
       setState(() => _error = 'Connection error. Check that the server is running.');

@@ -1,3 +1,5 @@
+
+
 class Recommendation {
   final int contentId;
   final String title;
@@ -5,8 +7,9 @@ class Recommendation {
   final String? contentTypeName;
   final double avgRating;
   final int totalRatings;
-  final String? explanationText;
-  final List<String> genres;
+  final int? releaseYear;
+  final double score;
+  final String explanationText;
 
   Recommendation({
     this.contentId = 0,
@@ -15,9 +18,10 @@ class Recommendation {
     this.contentTypeName,
     this.avgRating = 0,
     this.totalRatings = 0,
-    this.explanationText,
-    List<String>? genres,
-  }) : genres = genres ?? [];
+    this.releaseYear,
+    this.score = 0,
+    this.explanationText = '',
+  });
 
   factory Recommendation.fromJson(Map<String, dynamic> json) {
     return Recommendation(
@@ -27,8 +31,9 @@ class Recommendation {
       contentTypeName: json['contentTypeName'],
       avgRating: (json['avgRating'] ?? 0).toDouble(),
       totalRatings: json['totalRatings'] ?? 0,
-      explanationText: json['explanationText'],
-      genres: json['genres'] != null ? List<String>.from(json['genres']) : [],
+      releaseYear: json['releaseYear'],
+      score: (json['score'] ?? 0).toDouble(),
+      explanationText: json['explanationText'] ?? '',
     );
   }
 }

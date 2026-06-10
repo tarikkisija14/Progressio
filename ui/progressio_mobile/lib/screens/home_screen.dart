@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
 import 'package:progressio_mobile/model/calendar_item.dart';
 import 'package:progressio_mobile/model/content.dart';
 import 'package:progressio_mobile/model/recommendation.dart';
@@ -8,10 +10,13 @@ import 'package:progressio_mobile/providers/calendar_provider.dart';
 import 'package:progressio_mobile/providers/content_provider.dart';
 import 'package:progressio_mobile/providers/progress_provider.dart';
 import 'package:progressio_mobile/providers/recommendation_provider.dart';
+import 'package:progressio_mobile/screens/content_detail_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/utils/utils.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
-import 'package:provider/provider.dart';
+import 'package:progressio_mobile/widgets/content_card.dart';
+import 'package:progressio_mobile/widgets/section_header.dart';
+import 'package:progressio_mobile/widgets/skeleton_loader.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,924 +26,318 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late ContentProvider contentProvider;
-  late RecommendationProvider recommendationProvider;
-  late ProgressProvider progressProvider;
-  late CalendarProvider calendarProvider;
+  List<Content> _popular = [];
+  List<UserProgress> _inProgress = [];
+  List<Recommendation> _recommendations = [];
+  List<CalendarItem> _todayReleases = [];
+  Content? _featured;
 
-  bool isLoading = true;
-  String? errorMessage;
-
-  List<Content> contents = [];
-  List<Recommendation> recommendations = [];
-  List<UserProgress> continueWatching = [];
-  List<CalendarItem> todayReleases = [];
+  bool _loadingPopular = true;
+  bool _loadingProgress = true;
+  bool _loadingRecs = true;
+  bool _loadingToday = true;
 
   @override
   void initState() {
     super.initState();
-    contentProvider = context.read<ContentProvider>();
-    recommendationProvider = context.read<RecommendationProvider>();
-    progressProvider = context.read<ProgressProvider>();
-    calendarProvider = context.read<CalendarProvider>();
-    loadData();
+    _loadAll();
   }
 
-  Future<void> loadData() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
+  Future<void> _loadAll() async {
+    await Future.wait([
+      _loadPopular(),
+      _loadInProgress(),
+      _loadRecommendations(),
+      _loadToday(),
+    ]);
+  }
 
+  Future<void> _loadPopular() async {
     try {
-      final loadedContent = await contentProvider.get(
-        filter: {'page': 1, 'pageSize': 20},
-      );
-      final loadedRecommendations =
-          await recommendationProvider.getRecommendations();
-      final loadedProgress =
-          await progressProvider.getMyProgress(status: 'InProgress');
-      final loadedToday = await calendarProvider.getToday();
-
-      if (!mounted) return;
-
-      setState(() {
-  contents = loadedContent.items ;
-  recommendations = loadedRecommendations;
-  continueWatching = loadedProgress;
-  todayReleases = loadedToday;
-  isLoading = false;
-});
+      final result = await context
+          .read<ContentProvider>()
+          .get(filter: {'page': 1, 'pageSize': 20, 'isActive': true});
+      if (mounted) {
+        setState(() {
+          _popular = result.items;
+          _featured = result.items.isNotEmpty ? result.items.first : null;
+          _loadingPopular = false;
+        });
+      }
     } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        errorMessage = e.toString();
-        isLoading = false;
-      });
+      debugPrint('POPULAR ERROR: $e');
+      if (mounted) setState(() => _loadingPopular = false);
     }
+  }
+
+  Future<void> _loadInProgress() async {
+    try {
+      final items = await context
+          .read<ProgressProvider>()
+          .getMyProgress(status: 'InProgress');
+      if (mounted) {
+        setState(() {
+          _inProgress = items;
+          _loadingProgress = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingProgress = false);
+    }
+  }
+
+  Future<void> _loadRecommendations() async {
+    try {
+      final items =
+          await context.read<RecommendationProvider>().getRecommendations();
+      if (mounted) {
+        setState(() {
+          _recommendations = items;
+          _loadingRecs = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingRecs = false);
+    }
+  }
+
+  Future<void> _loadToday() async {
+    try {
+      final items = await context.read<CalendarProvider>().getToday();
+      if (mounted) {
+        setState(() {
+          _todayReleases = items;
+          _loadingToday = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingToday = false);
+    }
+  }
+
+  void _goToDetail(int contentId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ContentDetailScreen(contentId: contentId),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: AppShellBackground(
-        child: SafeArea(
-          child: RefreshIndicator(
-            color: AppColors.primary,
-            backgroundColor: AppColors.surface,
-            onRefresh: loadData,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(child: _buildHeader()),
-                if (isLoading)
-                  const SliverToBoxAdapter(child: _HomeSkeleton())
-                else if (errorMessage != null)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _ErrorState(onRetry: loadData),
-                  )
-                else ...[
-                  SliverToBoxAdapter(child: _buildFeatured()),
-                  SliverToBoxAdapter(
-                    child: _ProgressRail(items: continueWatching),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _RecommendationRail(items: recommendations),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _TodayRail(items: todayReleases),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _ContentRail(
-                      title: 'Trending / Popular',
-                      subtitle: 'High rated content from the catalog',
-                      items: contents,
-                    ),
-                  ),
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: AppSpacing.xxl),
-                  ),
-                ],
-              ],
-            ),
-          ),
+      body: RefreshIndicator(
+        color: AppColors.primary,
+        backgroundColor: AppColors.card,
+        onRefresh: () async {
+          setState(() {
+            _loadingPopular = true;
+            _loadingProgress = true;
+            _loadingRecs = true;
+            _loadingToday = true;
+          });
+          await _loadAll();
+        },
+        child: CustomScrollView(
+          slivers: [
+            _buildAppBar(),
+            SliverToBoxAdapter(child: _buildFeaturedBanner()),
+            SliverToBoxAdapter(child: _buildContinueWatching()),
+            SliverToBoxAdapter(child: _buildRecommended()),
+            SliverToBoxAdapter(child: _buildTodayReleases()),
+            SliverToBoxAdapter(child: _buildPopular()),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.sm,
-      ),
-      child: Row(
+  // ─── App Bar ─────────────────────────────────────────────────────────────────
+
+  Widget _buildAppBar() {
+    return SliverAppBar(
+      floating: true,
+      snap: true,
+      backgroundColor: AppColors.background,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      title: Row(
         children: [
-          const AppBrandMark(size: 42, iconSize: 24),
-          const SizedBox(width: AppSpacing.md),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Progressio',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Track stories, episodes and progress',
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadii.md),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: const Icon(
-              Icons.notifications_none_rounded,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFeatured() {
-    final featured = contents.isNotEmpty ? contents.first : null;
-
-    if (featured == null) {
-      return const _EmptySection(
-        title: 'Featured',
-        message: 'No featured content available.',
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.lg,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadii.xl),
-        child: Container(
-          height: 410,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _PosterImage(
-                imageUrl: featured.coverImageUrl,
-                width: double.infinity,
-                height: double.infinity,
-                borderRadius: 0,
-                iconSize: 72,
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0x26000000),
-                      Color(0x99000000),
-                      Color(0xF2000000),
-                    ],
-                    stops: [0.20, 0.62, 1],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: AppSpacing.lg,
-                right: AppSpacing.lg,
-                bottom: AppSpacing.lg,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.sm,
-                      children: [
-                        _RatingBadge(rating: featured.avgRating),
-                        if (featured.contentTypeName != null)
-                          _ChipBadge(text: featured.contentTypeName!),
-                        if (featured.releaseYear != null)
-                          _ChipBadge(text: featured.releaseYear.toString()),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      featured.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 31,
-                        height: 1.05,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    if (featured.description != null &&
-                        featured.description!.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        featured.description!,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          height: 1.45,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: AppSpacing.lg),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 50,
-                            child: ElevatedButton.icon(
-                              onPressed: () {},
-                              icon: const Icon(Icons.play_arrow_rounded),
-                              label: const Text('Open details'),
-                              style: ElevatedButton.styleFrom(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadii.xl),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Container(
-                          height: 50,
-                          width: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(AppRadii.xl),
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: const Icon(
-                            Icons.add_rounded,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ContentRail extends StatelessWidget {
-  const _ContentRail({
-    required this.title,
-    required this.subtitle,
-    required this.items,
-  });
-
-  final String title;
-  final String subtitle;
-  final List<Content> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return _EmptySection(title: title, message: 'No content available.');
-    }
-
-    return _RailShell(
-      title: title,
-      subtitle: subtitle,
-      child: SizedBox(
-        height: 252,
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          scrollDirection: Axis.horizontal,
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
-          itemBuilder: (context, index) => _ContentCard(content: items[index]),
-        ),
-      ),
-    );
-  }
-}
-
-class _RecommendationRail extends StatelessWidget {
-  const _RecommendationRail({required this.items});
-
-  final List<Recommendation> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const _EmptySection(
-        title: 'Recommended For You',
-        message: 'No recommendations available.',
-      );
-    }
-
-    return _RailShell(
-      title: 'Recommended For You',
-      subtitle: 'Explainable picks based on your progress',
-      child: SizedBox(
-        height: 286,
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          scrollDirection: Axis.horizontal,
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
-          itemBuilder: (context, index) =>
-              _RecommendationCard(item: items[index]),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProgressRail extends StatelessWidget {
-  const _ProgressRail({required this.items});
-
-  final List<UserProgress> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const _EmptySection(
-        title: 'Continue Watching',
-        message: 'Your in-progress content will appear here.',
-      );
-    }
-
-    return _RailShell(
-      title: 'Continue Watching',
-      subtitle: 'Pick up where you left off',
-      child: SizedBox(
-        height: 245,
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          scrollDirection: Axis.horizontal,
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
-          itemBuilder: (context, index) => _ProgressCard(item: items[index]),
-        ),
-      ),
-    );
-  }
-}
-
-class _TodayRail extends StatelessWidget {
-  const _TodayRail({required this.items});
-
-  final List<CalendarItem> items;
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const _EmptySection(
-        title: 'Izlazi danas',
-        message: 'No releases scheduled for today.',
-      );
-    }
-
-    return _RailShell(
-      title: 'Izlazi danas',
-      subtitle: 'Episodes and chapters from your tracked content',
-      child: SizedBox(
-        height: 184,
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          scrollDirection: Axis.horizontal,
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
-          itemBuilder: (context, index) => _ReleaseCard(item: items[index]),
-        ),
-      ),
-    );
-  }
-}
-
-class _RailShell extends StatelessWidget {
-  const _RailShell({
-    required this.title,
-    required this.subtitle,
-    required this.child,
-  });
-
-  final String title;
-  final String subtitle;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xl),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-class _ContentCard extends StatelessWidget {
-  const _ContentCard({required this.content});
-
-  final Content content;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 138,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              _PosterImage(
-                imageUrl: content.coverImageUrl,
-                width: 138,
-                height: 205,
-                borderRadius: AppRadii.lg,
-              ),
-              Positioned(
-                left: AppSpacing.sm,
-                top: AppSpacing.sm,
-                child: _RatingBadge(rating: content.avgRating),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            content.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+          const AppBrandMark(size: 32, iconSize: 18),
+          const SizedBox(width: 10),
+          const Text(
+            'Progressio',
+            style: TextStyle(
               color: AppColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            content.contentTypeName ?? 'Content',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textFaint,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RecommendationCard extends StatelessWidget {
-  const _RecommendationCard({required this.item});
-
-  final Recommendation item;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 152,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              _PosterImage(
-                imageUrl: item.coverImageUrl,
-                width: 152,
-                height: 205,
-                borderRadius: AppRadii.lg,
-              ),
-              Positioned(
-                left: AppSpacing.sm,
-                top: AppSpacing.sm,
-                child: _RatingBadge(rating: item.avgRating),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            item.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
               fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          _ExplanationBadge(
-            text: item.explanationText ?? 'Recommended for you',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProgressCard extends StatelessWidget {
-  const _ProgressCard({required this.item});
-
-  final UserProgress item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 260,
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: AppDecorations.panel(radius: AppRadii.lg),
-      child: Row(
-        children: [
-          _PosterImage(
-            imageUrl: item.coverImageUrl,
-            width: 96,
-            height: 142,
-            borderRadius: AppRadii.md,
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _ChipBadge(text: item.status),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  item.contentTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 17,
-                    height: 1.15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  item.contentTypeName ?? 'Content',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                  ),
-                ),
-                if (item.lastActivityAt != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    timeAgo(item.lastActivityAt),
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ],
+              fontSize: 20,
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ReleaseCard extends StatelessWidget {
-  const _ReleaseCard({required this.item});
-
-  final CalendarItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 295,
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: AppDecorations.panel(radius: AppRadii.lg),
-      child: Row(
-        children: [
-          _PosterImage(
-            imageUrl: item.coverImageUrl,
-            width: 84,
-            height: 124,
-            borderRadius: AppRadii.md,
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      item.itemType.isEmpty ? 'Release' : item.itemType,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  item.contentTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 17,
-                    height: 1.15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  item.releaseDetails.isEmpty
-                      ? item.title
-                      : item.releaseDetails,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  formatDate(item.releaseDate),
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PosterImage extends StatelessWidget {
-  const _PosterImage({
-    required this.imageUrl,
-    required this.width,
-    required this.height,
-    required this.borderRadius,
-    this.iconSize = 34,
-  });
-
-  final String? imageUrl;
-  final double width;
-  final double height;
-  final double borderRadius;
-  final double iconSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final placeholder = Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceHighest,
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Icon(
-        Icons.movie_creation_outlined,
-        color: AppColors.textFaint,
-        size: iconSize,
-      ),
-    );
-
-    if (imageUrl == null || imageUrl!.isEmpty) return placeholder;
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: CachedNetworkImage(
-        imageUrl: imageUrl!,
-        width: width,
-        height: height,
-        fit: BoxFit.cover,
-        placeholder: (_, __) => placeholder,
-        errorWidget: (_, __, ___) => placeholder,
-      ),
-    );
-  }
-}
-
-class _RatingBadge extends StatelessWidget {
-  const _RatingBadge({required this.rating});
-
-  final double rating;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(AppRadii.pill),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.star_rounded, color: AppColors.primary, size: 15),
-          const SizedBox(width: 3),
-          Text(
-            ratingString(rating),
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChipBadge extends StatelessWidget {
-  const _ChipBadge({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(AppRadii.pill),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: AppColors.textSecondary,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.notifications_outlined,
+              color: AppColors.textSecondary),
+          onPressed: () {},
         ),
-      ),
+      ],
     );
   }
-}
 
-class _ExplanationBadge extends StatelessWidget {
-  const _ExplanationBadge({required this.text});
+  // ─── Featured Banner ─────────────────────────────────────────────────────────
 
-  final String text;
+  Widget _buildFeaturedBanner() {
+    if (_loadingPopular) {
+      return const SkeletonBox(width: double.infinity, height: 320, radius: 0);
+    }
+    if (_featured == null) return const SizedBox();
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.primarySoft,
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        border: Border.all(color: AppColors.primaryGlow),
-      ),
-      child: Text(
-        text,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: AppColors.secondary,
-          fontSize: 11,
-          height: 1.25,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptySection extends StatelessWidget {
-  const _EmptySection({required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        0,
-        AppSpacing.lg,
-        AppSpacing.xl,
-      ),
-      child: Container(
+    return GestureDetector(
+      onTap: () => _goToDetail(_featured!.id),
+      child: SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        decoration: AppDecorations.panel(radius: AppRadii.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        height: 320,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
+            _featured!.coverImageUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: _featured!.coverImageUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) =>
+                        Container(color: AppColors.surface),
+                    errorWidget: (_, __, ___) =>
+                        Container(color: AppColors.surface),
+                  )
+                : Container(color: AppColors.surface),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    AppColors.background.withOpacity(0.6),
+                    AppColors.background,
+                  ],
+                  stops: const [0.25, 0.65, 1.0],
+                ),
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              message,
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 13,
+            Positioned(
+              bottom: 20,
+              left: 18,
+              right: 18,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_featured!.contentTypeName != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        _featured!.contentTypeName!.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  Text(
+                    _featured!.title,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.star_rounded,
+                          color: AppColors.premium, size: 15),
+                      const SizedBox(width: 4),
+                      Text(
+                        ratingString(_featured!.avgRating),
+                        style: const TextStyle(
+                          color: AppColors.premium,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (_featured!.releaseYear != null) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          '${_featured!.releaseYear}',
+                          style: const TextStyle(
+                              color: AppColors.textMuted, fontSize: 13),
+                        ),
+                      ],
+                      if (_featured!.genres.isNotEmpty) ...[
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            _featured!.genres.take(2).join(' · '),
+                            style: const TextStyle(
+                                color: AppColors.textMuted, fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => _goToDetail(_featured!.id),
+                        icon: const Icon(Icons.play_arrow_rounded,
+                            size: 18, color: Colors.black),
+                        label: const Text('View Details'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 10),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24)),
+                          textStyle: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        onPressed: () {},
+                        icon: const Icon(Icons.add_rounded,
+                            size: 16, color: AppColors.textSecondary),
+                        label: const Text(
+                          'My List',
+                          style: TextStyle(
+                              color: AppColors.textSecondary, fontSize: 13),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.border),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
@@ -946,91 +345,158 @@ class _EmptySection extends StatelessWidget {
       ),
     );
   }
-}
 
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.onRetry});
+  // ─── Continue Watching ────────────────────────────────────────────────────────
 
-  final Future<void> Function() onRetry;
+  Widget _buildContinueWatching() {
+    if (_loadingProgress) {
+      return const SkeletonRail(title: 'Continue Watching');
+    }
+    if (_inProgress.isEmpty) return const SizedBox();
 
-  @override
-  Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Center(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          decoration: AppDecorations.panel(radius: AppRadii.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(
+            title: 'Continue Watching',
+            actionLabel: 'See All',
+            onAction: () {},
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 155,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _inProgress.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, i) {
+                final p = _inProgress[i];
+                return _ProgressCard(
+                  progress: p,
+                  onTap: () => _goToDetail(p.contentId),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Recommended ─────────────────────────────────────────────────────────────
+
+  Widget _buildRecommended() {
+    if (_loadingRecs) {
+      return const SkeletonRail(title: 'Recommended For You');
+    }
+    if (_recommendations.isEmpty) return const SizedBox();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(title: 'Recommended For You'),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 230,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _recommendations.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, i) {
+                final r = _recommendations[i];
+                return _RecommendationCard(
+                  rec: r,
+                  onTap: () => _goToDetail(r.contentId),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Today Releases ───────────────────────────────────────────────────────────
+
+  Widget _buildTodayReleases() {
+    if (_loadingToday) return const SizedBox();
+    if (_todayReleases.isEmpty) return const SizedBox();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              const Icon(
-                Icons.wifi_off_rounded,
-                color: AppColors.primary,
-                size: 42,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              const Text(
-                'Unable to load Home',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+              const SectionHeader(title: 'Out Today'),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.error,
+                  borderRadius: BorderRadius.circular(6),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              const Text(
-                'Check the API connection and try again.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textMuted),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              SizedBox(
-                height: 46,
-                child: ElevatedButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Retry'),
+                child: Text(
+                  '${_todayReleases.length} NEW',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 14),
+          ..._todayReleases
+              .take(5)
+              .map((item) => _TodayReleaseRow(item: item)),
+        ],
       ),
     );
   }
-}
 
-class _HomeSkeleton extends StatelessWidget {
-  const _HomeSkeleton();
+  // ─── Popular ──────────────────────────────────────────────────────────────────
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildPopular() {
+    if (_loadingPopular) return const SkeletonRail(title: 'Popular');
+    if (_popular.isEmpty) return const SizedBox();
+
     return Padding(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SkeletonBox(
-            height: 410,
-            width: double.infinity,
-            radius: AppRadii.xl,
+          SectionHeader(
+            title: 'Popular',
+            actionLabel: 'See All',
+            onAction: () {},
           ),
-          const SizedBox(height: AppSpacing.xl),
-          const _SkeletonBox(height: 24, width: 210, radius: AppRadii.sm),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: 14),
           SizedBox(
-            height: 220,
+            height: 250,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: 3,
-              separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
-              itemBuilder: (_, __) => const _SkeletonBox(
-                height: 205,
-                width: 138,
-                radius: AppRadii.lg,
-              ),
+              itemCount: _popular.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, i) {
+                final c = _popular[i];
+                return ContentCard(
+                  contentId: c.id,
+                  title: c.title,
+                  coverImageUrl: c.coverImageUrl,
+                  contentTypeName: c.contentTypeName,
+                  avgRating: c.avgRating,
+                  onTap: () => _goToDetail(c.id),
+                );
+              },
             ),
           ),
         ],
@@ -1039,26 +505,299 @@ class _HomeSkeleton extends StatelessWidget {
   }
 }
 
-class _SkeletonBox extends StatelessWidget {
-  const _SkeletonBox({
-    required this.height,
-    required this.width,
-    required this.radius,
-  });
+// ─── Progress Card ────────────────────────────────────────────────────────────
+// ProgressResponse ne sadrži coverImageUrl — prikazujemo placeholder
 
-  final double height;
-  final double width;
-  final double radius;
+class _ProgressCard extends StatelessWidget {
+  final UserProgress progress;
+  final VoidCallback onTap;
+
+  const _ProgressCard({required this.progress, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 130,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(
+                      color: AppColors.surface,
+                      child: const Center(
+                        child: Icon(Icons.movie_rounded,
+                            color: AppColors.textFaint, size: 28),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: const Text(
+                          'IN PROGRESS',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              progress.contentTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (progress.lastActivityAt != null)
+              Text(
+                timeAgo(progress.lastActivityAt),
+                style: const TextStyle(
+                  color: AppColors.textFaint,
+                  fontSize: 11,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Recommendation Card ──────────────────────────────────────────────────────
+// RecommendationResponse nema genres — prikazujemo samo naziv i rating
+
+class _RecommendationCard extends StatelessWidget {
+  final Recommendation rec;
+  final VoidCallback onTap;
+
+  const _RecommendationCard({required this.rec, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 110,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 2 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    rec.coverImageUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: rec.coverImageUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) =>
+                                Container(color: AppColors.surface),
+                            errorWidget: (_, __, ___) =>
+                                Container(color: AppColors.surface),
+                          )
+                        : Container(
+                            color: AppColors.surface,
+                            child: const Center(
+                              child: Icon(Icons.movie_rounded,
+                                  color: AppColors.textFaint, size: 28),
+                            ),
+                          ),
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.overlay,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star_rounded,
+                                color: AppColors.premium, size: 11),
+                            const SizedBox(width: 2),
+                            Text(
+                              ratingString(rec.avgRating),
+                              style: const TextStyle(
+                                color: AppColors.premium,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              rec.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
+            if (rec.explanationText.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  rec.explanationText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Today Release Row ────────────────────────────────────────────────────────
+// CalendarItemResponse nema coverImageUrl — prikazujemo ikonu tipa sadržaja
+
+class _TodayReleaseRow extends StatelessWidget {
+  final CalendarItem item;
+
+  const _TodayReleaseRow({required this.item});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: height,
-      width: width,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: AppColors.border),
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Icon(
+                item.itemType.toLowerCase() == 'episode'
+                    ? Icons.play_circle_outline_rounded
+                    : Icons.menu_book_rounded,
+                color: AppColors.textMuted,
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.contentTitle,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  item.title,
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: item.itemType.toLowerCase() == 'episode'
+                      ? AppColors.secondary.withOpacity(0.15)
+                      : AppColors.warning.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  item.itemType,
+                  style: TextStyle(
+                    color: item.itemType.toLowerCase() == 'episode'
+                        ? AppColors.secondary
+                        : AppColors.warning,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (item.releaseDetails.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  item.releaseDetails,
+                  style: const TextStyle(
+                      color: AppColors.textFaint, fontSize: 11),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }

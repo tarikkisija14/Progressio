@@ -76,7 +76,7 @@ class ProgressioApp extends StatelessWidget {
       title: 'Progressio',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
-      home: const HomeScreen(),
+     home: const LoginScreen(),
     );
   }
 

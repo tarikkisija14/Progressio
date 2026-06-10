@@ -1,41 +1,55 @@
+
+
 class FeedItem {
-  final int id;
-  final int userId;
-  final String username;
-  final String? userProfileImageUrl;
   final String activityType;
-  final String? contentTitle;
-  final String? coverImageUrl;
+  final int actorUserId;
+  final String actorFullName;
+  final String? actorProfileImageUrl;
   final int? contentId;
-  final String? extraText;
-  final DateTime createdAt;
+  final String? contentTitle;
+  final String? contentCoverImageUrl;
+  final int? achievementId;
+  final String? achievementName;
+  final int? userListId;
+  final String? userListName;
+  final int? reviewId;
+  final int? reviewRating;
+  final DateTime occurredAt;
 
   FeedItem({
-    this.id = 0,
-    this.userId = 0,
-    this.username = '',
-    this.userProfileImageUrl,
     this.activityType = '',
-    this.contentTitle,
-    this.coverImageUrl,
+    this.actorUserId = 0,
+    this.actorFullName = '',
+    this.actorProfileImageUrl,
     this.contentId,
-    this.extraText,
-    DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+    this.contentTitle,
+    this.contentCoverImageUrl,
+    this.achievementId,
+    this.achievementName,
+    this.userListId,
+    this.userListName,
+    this.reviewId,
+    this.reviewRating,
+    DateTime? occurredAt,
+  }) : occurredAt = occurredAt ?? DateTime.now();
 
   factory FeedItem.fromJson(Map<String, dynamic> json) {
     return FeedItem(
-      id: json['id'] ?? 0,
-      userId: json['userId'] ?? 0,
-      username: json['username'] ?? '',
-      userProfileImageUrl: json['userProfileImageUrl'],
-      activityType: json['activityType'] ?? '',
-      contentTitle: json['contentTitle'],
-      coverImageUrl: json['coverImageUrl'],
+      activityType: json['activityType']?.toString() ?? '',
+      actorUserId: json['actorUserId'] ?? 0,
+      actorFullName: json['actorFullName'] ?? '',
+      actorProfileImageUrl: json['actorProfileImageUrl'],
       contentId: json['contentId'],
-      extraText: json['extraText'],
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+      contentTitle: json['contentTitle'],
+      contentCoverImageUrl: json['contentCoverImageUrl'],
+      achievementId: json['achievementId'],
+      achievementName: json['achievementName'],
+      userListId: json['userListId'],
+      userListName: json['userListName'],
+      reviewId: json['reviewId'],
+      reviewRating: json['reviewRating'],
+      occurredAt: json['occurredAt'] != null
+          ? DateTime.parse(json['occurredAt'])
           : DateTime.now(),
     );
   }

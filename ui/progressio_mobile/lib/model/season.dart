@@ -3,18 +3,18 @@ class Season {
   final int contentId;
   final String? contentTitle;
   final int seasonNumber;
-  final String? title;
-  final int? releaseYear;
+  final String title;
   final int episodeCount;
+  final int? releaseYear;
 
   Season({
     this.id = 0,
     this.contentId = 0,
     this.contentTitle,
     this.seasonNumber = 1,
-    this.title,
-    this.releaseYear,
+    this.title = '',
     this.episodeCount = 0,
+    this.releaseYear,
   });
 
   factory Season.fromJson(Map<String, dynamic> json) {
@@ -23,9 +23,9 @@ class Season {
       contentId: json['contentId'] ?? 0,
       contentTitle: json['contentTitle'],
       seasonNumber: json['seasonNumber'] ?? 1,
-      title: json['title'],
-      releaseYear: json['releaseYear'],
+      title: json['title'] ?? '',
       episodeCount: json['episodeCount'] ?? 0,
+      releaseYear: json['releaseYear'],
     );
   }
 }

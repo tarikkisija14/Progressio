@@ -1,3 +1,5 @@
+
+
 class Character {
   final int id;
   final int contentId;
