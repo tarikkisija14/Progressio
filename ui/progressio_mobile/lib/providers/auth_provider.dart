@@ -7,6 +7,9 @@ class AuthProvider {
   static bool isPremium = false;
   static String? userRole;
 
+ 
+  static int? get currentUserId => userId;
+
   static bool get isLoggedIn => token != null && token!.isNotEmpty;
 
   static void clear() {
