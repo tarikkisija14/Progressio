@@ -116,4 +116,11 @@ class UserListProvider extends BaseProvider<UserList> {
   Future<void> leaveList(int listId) async {
     await deleteRaw('lists/$listId/leave');
   }
+
+  /// GET /api/lists/{id}/members
+  Future<List<UserListMember>> getMembers(int listId) async {
+    final data = await getRaw('lists/$listId/members');
+    final list = data is List ? data : (data['items'] ?? []);
+    return (list as List).map((e) => UserListMember.fromJson(e)).toList();
+  }
 }

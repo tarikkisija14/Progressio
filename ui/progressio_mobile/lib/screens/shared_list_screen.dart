@@ -49,16 +49,11 @@ class _SharedListScreenState extends State<SharedListScreen> {
   Future<void> _loadMembers() async {
     setState(() => _loadingMembers = true);
     try {
-      final data = await context
-          .read<UserListProvider>()
-          .getRaw('lists/${widget.list.id}/members');
-      if (mounted) {
-        final list = data is List ? data : (data['items'] ?? []);
-        setState(() {
-          _members = (list as List).map((e) => UserListMember.fromJson(e)).toList();
-          _loadingMembers = false;
-        });
-      }
+      final members = await context.read<UserListProvider>().getMembers(widget.list.id);
+      if (mounted) setState(() {
+        _members = members;
+        _loadingMembers = false;
+      });
     } catch (_) {
       if (mounted) setState(() => _loadingMembers = false);
     }

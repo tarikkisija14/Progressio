@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'package:progressio_mobile/model/content.dart';
 import 'package:progressio_mobile/providers/content_provider.dart';
+import 'package:progressio_mobile/providers/base_provider.dart';
 import 'package:progressio_mobile/screens/content_detail_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
@@ -41,19 +42,31 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     setState(() => _loading = true);
     try {
-     final result = await context
-    .read<ContentProvider>()
-    .get(filter: {'page': 1, 'pageSize': 30, 'title': q, 'isActive': true});
+      final result = await context
+          .read<ContentProvider>()
+          .get(filter: {'page': 1, 'pageSize': 30, 'title': q, 'isActive': true});
       if (mounted) {
         setState(() {
           _results = result.items;
           _searched = true;
           _loading = false;
         });
+        // Faza 13 — log pretrage kao signal za recommender
+        // POST /api/searchlogs  (fire and forget, ne blokiramo UI)
+        _logSearch(q, result.items.length);
       }
     } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// POST /api/searchlogs — bilježi pretragu za recommender signal.
+  /// Fire-and-forget: greška se tiho zanemaruje da ne prekida UX.
+  void _logSearch(String query, int resultCount) {
+    context.read<ContentProvider>().postRaw('searchlogs', {
+      'query': query,
+      'resultCount': resultCount,
+    }).catchError((_) {});
   }
 
   @override
@@ -137,7 +150,7 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_rounded, color: AppColors.textFaint, size: 56),
+          const Icon(Icons.search_rounded, color: AppColors.textFaint, size: 56),
           const SizedBox(height: 16),
           const Text(
             'Search for content',
@@ -158,7 +171,7 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off_rounded, color: AppColors.textFaint, size: 56),
+          const Icon(Icons.search_off_rounded, color: AppColors.textFaint, size: 56),
           const SizedBox(height: 16),
           Text(
             'No results for "${_ctrl.text}"',
@@ -317,14 +330,14 @@ class _SearchSkeletonTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const SkeletonBox(width: 48, height: 72, radius: 8),
-          const SizedBox(width: 12),
+          SkeletonBox(width: 48, height: 72, radius: 8),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 SkeletonBox(width: double.infinity, height: 14),
                 SizedBox(height: 6),
                 SkeletonBox(width: 80, height: 20),

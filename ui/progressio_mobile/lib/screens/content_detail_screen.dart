@@ -72,7 +72,8 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
   @override
   void initState() {
     super.initState();
-       print('CONTENT DETAIL SCREEN OPENED: ${widget.contentId}');
+    // Inicijalizujemo s 3 taba — bit će reinicijalizovano nakon load-a
+    // kada se zna tip sadrzaja (_tabs.length moze biti 3 ili 4)
     _tabController = TabController(length: 3, vsync: this);
     _loadContent();
   }
@@ -83,57 +84,60 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
     super.dispose();
   }
 
- 
-  Future<void> _loadContent() async {
-  try {
-    print('LOAD CONTENT START');
-    print('GETTING CONTENT ${widget.contentId}');
-
-    final content =
-        await context.read<ContentProvider>().getById(widget.contentId);
-
-    print('CONTENT LOADED: ${content.title}');
-
-    final progress =
-        await context.read<ProgressProvider>().getForContent(widget.contentId);
-
-    print('PROGRESS LOADED');
-
-    if (!mounted) return;
-
-    setState(() {
-      _content = content;
-      _progress = progress;
-      _loadingContent = false;
-    });
-
-    final t = content.contentTypeName?.toLowerCase() ?? '';
-    final isSeries =
-        t.contains('anime') || t.contains('series') || t.contains('tv');
-    final isBook =
-        t.contains('manga') || t.contains('book') || t.contains('novel');
-
-    _loadCharacters();
-    _loadReviews();
-
-    if (isSeries) {
-      _loadSeasons();
-    }
-
-    if (isBook) {
-      _loadChapters();
-    }
-  } catch (e) {
-    print('CONTENT DETAIL LOAD ERROR: $e');
-
-    if (mounted) {
-      setState(() {
-        _loadingContent = false;
-      });
+  /// Reinicijalizuje TabController na ispravan broj tabova nakon sto se
+  /// ucita sadrzaj i zna se tip (serija/knjiga/film).
+  void _reinitTabController() {
+    final newLength = _tabs.length;
+    if (_tabController.length != newLength) {
+      _tabController.dispose();
+      _tabController = TabController(length: newLength, vsync: this);
     }
   }
-}
 
+  Future<void> _loadContent() async {
+    try {
+      final content =
+          await context.read<ContentProvider>().getById(widget.contentId);
+
+      final progress =
+          await context.read<ProgressProvider>().getForContent(widget.contentId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _content = content;
+        _progress = progress;
+        _loadingContent = false;
+      });
+
+      // Reinicijalizuj TabController sada kada znamo tip sadrzaja
+      _reinitTabController();
+
+      final t = content.contentTypeName?.toLowerCase() ?? '';
+      final isSeries =
+          t.contains('anime') || t.contains('series') || t.contains('tv');
+      final isBook =
+          t.contains('manga') || t.contains('book') || t.contains('novel');
+
+      _loadCharacters();
+      _loadReviews();
+
+      if (isSeries) {
+        _loadSeasons();
+      }
+
+      if (isBook) {
+        _loadChapters();
+      }
+    } catch (e) {
+      debugPrint('ContentDetailScreen load error: $e');
+      if (mounted) {
+        setState(() {
+          _loadingContent = false;
+        });
+      }
+    }
+  }
 
   Future<void> _loadSeasons() async {
     setState(() => _loadingSeasons = true);
@@ -221,7 +225,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
     }
   }
 
-  /// Pokretanje praćenja — POST /api/progress/start
+  /// Pokretanje pracenja — POST /api/progress/start
   Future<void> _startProgress() async {
     setState(() => _updatingStatus = true);
     try {
@@ -1049,7 +1053,6 @@ class _EpisodeTile extends StatelessWidget {
               fontSize: 13,
               fontWeight: FontWeight.w400),
         ),
-        // airDate je non-nullable u backendu
         subtitle: Text(
           formatDate(episode.airDate),
           style:
@@ -1119,7 +1122,7 @@ class _CharacterCard extends StatelessWidget {
                   fontWeight: FontWeight.w600),
             ),
           ),
-          // Backend vraća isMainCharacter (bool), NE role (String)
+          // Backend vraca isMainCharacter (bool), NE role (String)
           if (character.isMainCharacter) ...[
             const SizedBox(height: 4),
             Container(
@@ -1161,7 +1164,7 @@ class _ReviewCardState extends State<_ReviewCard> {
   @override
   Widget build(BuildContext context) {
     final r = widget.review;
-    // Backend vraća userFullName, ne username
+    // Backend vraca userFullName, ne username
     final displayName =
         r.userFullName.isNotEmpty ? r.userFullName : 'Anonymous';
     return Container(
