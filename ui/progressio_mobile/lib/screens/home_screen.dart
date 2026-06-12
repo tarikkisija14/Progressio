@@ -2,6 +2,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:progressio_mobile/screens/calendar_screen.dart';
+import 'package:progressio_mobile/screens/content_list_screen.dart';
+import 'package:progressio_mobile/screens/notifications_screen.dart';
+import 'package:progressio_mobile/widgets/add_to_list_sheet.dart';
 
 import 'package:progressio_mobile/model/calendar_item.dart';
 import 'package:progressio_mobile/model/content.dart';
@@ -190,7 +193,11 @@ class _HomeScreenState extends State<HomeScreen> {
         IconButton(
           icon: const Icon(Icons.notifications_outlined,
               color: AppColors.textSecondary),
-          onPressed: () {},
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) => const NotificationsScreen()),
+          ),
         ),
       ],
     );
@@ -327,7 +334,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 10),
                       OutlinedButton.icon(
-                        onPressed: () {},
+                        onPressed: () => showAddToListSheet(
+                          context,
+                          contentId: _featured!.id,
+                        ),
                         icon: const Icon(Icons.add_rounded,
                             size: 16, color: AppColors.textSecondary),
                         label: const Text(
@@ -370,7 +380,15 @@ class _HomeScreenState extends State<HomeScreen> {
           SectionHeader(
             title: 'Continue Watching',
             actionLabel: 'See All',
-            onAction: () {},
+            onAction: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ContentListScreen(
+                  title: 'Continue Watching',
+                  filter: {'isActive': true},
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -485,7 +503,15 @@ class _HomeScreenState extends State<HomeScreen> {
           SectionHeader(
             title: 'Popular',
             actionLabel: 'See All',
-            onAction: () {},
+            onAction: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ContentListScreen(
+                  title: 'Popular',
+                  filter: {'isActive': true},
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           SizedBox(

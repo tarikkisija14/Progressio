@@ -2,18 +2,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:progressio_mobile/model/achievement.dart';
-import 'package:progressio_mobile/model/stats.dart';
-import 'package:progressio_mobile/model/user.dart';
-import 'package:progressio_mobile/model/user_list.dart';
-import 'package:progressio_mobile/providers/achievement_provider.dart';
-import 'package:progressio_mobile/providers/auth_provider.dart';
-import 'package:progressio_mobile/providers/stats_provider.dart';
-import 'package:progressio_mobile/providers/subscription_provider.dart';
-import 'package:progressio_mobile/providers/user_list_provider.dart';
-import 'package:progressio_mobile/providers/user_provider.dart';
-import 'package:progressio_mobile/screens/premium_screen.dart';
+import 'package:progressio_mobile/model/content.dart';
+import 'package:progressio_mobile/model/content_type.dart';
+import 'package:progressio_mobile/model/genre.dart';
+import 'package:progressio_mobile/providers/content_provider.dart';
+import 'package:progressio_mobile/providers/content_type_provider.dart';
+import 'package:progressio_mobile/providers/genre_provider.dart';
+import 'package:progressio_mobile/screens/content_detail_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
+import 'package:progressio_mobile/utils/utils.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
 
@@ -24,134 +21,132 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen>  {
-  AppUser? _user;
-  BasicStats? _basicStats;
-  PremiumStats? _premiumStats;
-  List<dynamic> _achievements = []; // UserAchievementResponse
-  List<UserList> _myLists = [];
+class _SearchScreenState extends State<SearchScreen> {
+  final _queryController = TextEditingController();
+  final _scrollController = ScrollController();
 
-  bool _loadingUser = true;
-  bool _loadingStats = true;
-  bool _loadingAchievements = true;
-  bool _loadingLists = true;
-  bool _updatingVisibility = false;
-  bool _showPremiumStats = false;
+  List<Content> _results = [];
+  bool _loading = false;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  int _page = 1;
+  String _query = '';
+
+  // Filters
+  int? _selectedGenreId;
+  int? _selectedTypeId;
+  List<Genre> _genres = [];
+  List<ContentType> _contentTypes = [];
+  bool _loadingFilters = true;
 
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _loadFilters();
+    _scrollController.addListener(_onScroll);
   }
 
-  Future<void> _loadAll() async {
-    await Future.wait([
-      _loadUser(),
-      _loadStats(),
-      _loadAchievements(),
-      _loadLists(),
-    ]);
+  @override
+  void dispose() {
+    _queryController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
-  Future<void> _loadUser() async {
-    setState(() => _loadingUser = true);
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_loadingMore &&
+        _hasMore) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadFilters() async {
     try {
-      final user = await context.read<UserProvider>().getMe();
+      final genres =
+          await context.read<GenreProvider>().get(filter: {'pageSize': 100});
+      final types = await context
+          .read<ContentTypeProvider>()
+          .get(filter: {'pageSize': 50});
       if (mounted) {
         setState(() {
-          _user = user;
-          AuthProvider.isPremium = user.isPremium;
+          _genres = genres.items;
+          _contentTypes = types.items;
+          _loadingFilters = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingFilters = false);
+    }
+  }
+
+  Future<void> _search() async {
+    final q = _queryController.text.trim();
+    setState(() {
+      _query = q;
+      _loading = true;
+      _page = 1;
+      _results = [];
+      _hasMore = false;
+    });
+
+    final filter = _buildFilter(page: 1);
+    try {
+      final result =
+          await context.read<ContentProvider>().get(filter: filter);
+      if (mounted) {
+        setState(() {
+          _results = result.items;
+          _hasMore = result.items.length >= 20;
+          _loading = false;
         });
       }
     } catch (e) {
-      debugPrint('Profile load user error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingUser = false);
+      debugPrint('Search error: $e');
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _loadStats() async {
-    setState(() => _loadingStats = true);
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    final nextPage = _page + 1;
+    final filter = _buildFilter(page: nextPage);
     try {
-      final basic =
-          await context.read<StatsProvider>().getBasicStats();
-      if (mounted) setState(() => _basicStats = basic);
-
-      if (AuthProvider.isPremium) {
-        try {
-          final premium =
-              await context.read<StatsProvider>().getPremiumStats();
-          if (mounted) setState(() => _premiumStats = premium);
-        } catch (_) {
-          // 403 for free users
-        }
-      }
-    } catch (e) {
-      debugPrint('Profile load stats error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingStats = false);
-    }
-  }
-
-  Future<void> _loadAchievements() async {
-    setState(() => _loadingAchievements = true);
-    try {
-      final userId = AuthProvider.userId ?? 0;
-      if (userId == 0) return;
-      final data = await context
-          .read<AchievementProvider>()
-          .getRaw('achievements/my', query: {'page': 1, 'pageSize': 10});
+      final result =
+          await context.read<ContentProvider>().get(filter: filter);
       if (mounted) {
-        final list = data is Map ? (data['items'] ?? []) : (data ?? []);
-        setState(() => _achievements = list as List);
+        setState(() {
+          _results.addAll(result.items);
+          _page = nextPage;
+          _hasMore = result.items.length >= 20;
+          _loadingMore = false;
+        });
       }
-    } catch (e) {
-      debugPrint('Profile load achievements error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingAchievements = false);
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
-  Future<void> _loadLists() async {
-    setState(() => _loadingLists = true);
-    try {
-      final lists =
-          await context.read<UserListProvider>().getMyLists();
-      if (mounted) setState(() => _myLists = lists);
-    } catch (e) {
-      debugPrint('Profile load lists error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingLists = false);
-    }
+  Map<String, dynamic> _buildFilter({required int page}) {
+    final filter = <String, dynamic>{
+      'page': page,
+      'pageSize': 20,
+      'isActive': true,
+    };
+    if (_query.isNotEmpty) filter['title'] = _query;
+    if (_selectedGenreId != null) filter['genreId'] = _selectedGenreId;
+    if (_selectedTypeId != null) filter['contentTypeId'] = _selectedTypeId;
+    return filter;
   }
 
-  Future<void> _toggleProfileVisibility() async {
-    if (_user == null || _updatingVisibility) return;
-    setState(() => _updatingVisibility = true);
-    try {
-      await context.read<UserProvider>().getRaw(
-            'auth/profile-visibility',
-          );
-      // PUT endpoint: PUT /api/auth/profile-visibility {isPublic: bool}
-      // Using putRaw via base_provider
-      await context.read<UserProvider>().putRaw(
-            'auth/profile-visibility',
-            {'isPublic': !_user!.isProfilePublic},
-          );
-      await _loadUser();
-    } catch (e) {
-      debugPrint('Toggle visibility error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update profile visibility.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _updatingVisibility = false);
-    }
+  void _clearFilters() {
+    setState(() {
+      _selectedGenreId = null;
+      _selectedTypeId = null;
+    });
+    if (_query.isNotEmpty || _results.isNotEmpty) _search();
   }
 
   @override
@@ -159,17 +154,13 @@ class _SearchScreenState extends State<SearchScreen>  {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: AppShellBackground(
-        child: RefreshIndicator(
-          onRefresh: _loadAll,
-          color: AppColors.primary,
-          backgroundColor: AppColors.card,
-          child: CustomScrollView(
-            slivers: [
-              _buildHeader(),
-              SliverToBoxAdapter(child: _buildStatsSection()),
-              SliverToBoxAdapter(child: _buildAchievementsSection()),
-              SliverToBoxAdapter(child: _buildListsSection()),
-              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildSearchBar(),
+              if (!_loadingFilters) _buildFilterChips(),
+              const Divider(color: AppColors.hairline, height: 1),
+              Expanded(child: _buildBody()),
             ],
           ),
         ),
@@ -177,742 +168,343 @@ class _SearchScreenState extends State<SearchScreen>  {
     );
   }
 
-  // ── HEADER ──────────────────────────────────────────────────────────────────
-
-  Widget _buildHeader() {
-    return SliverToBoxAdapter(
-      child: Container(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.lg,
-          MediaQuery.of(context).padding.top + AppSpacing.lg,
-          AppSpacing.lg,
-          AppSpacing.lg,
-        ),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [AppColors.primarySubtle, Colors.transparent],
-          ),
-        ),
-        child: _loadingUser ? _buildHeaderSkeleton() : _buildHeaderContent(),
-      ),
-    );
-  }
-
-  Widget _buildHeaderSkeleton() {
-    return Column(
-      children: const [
-        SkeletonBox(width: 80, height: 80, radius: 40),
-        SizedBox(height: 12),
-        SkeletonBox(width: 140, height: 18),
-        SizedBox(height: 6),
-        SkeletonBox(width: 100, height: 14),
-      ],
-    );
-  }
-
-  Widget _buildHeaderContent() {
-    if (_user == null) return const SizedBox.shrink();
-    final u = _user!;
-
-    return Column(
-      children: [
-        // Avatar
-        Stack(
-          alignment: Alignment.bottomRight,
-          children: [
-            ClipOval(
-              child: SizedBox(
-                width: 80,
-                height: 80,
-                child: u.profileImageUrl != null &&
-                        u.profileImageUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: u.profileImageUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            Container(color: AppColors.surface),
-                        errorWidget: (_, __, ___) =>
-                            _defaultAvatar(size: 80),
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _queryController,
+              style: const TextStyle(
+                  color: AppColors.textPrimary, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Search titles…',
+                hintStyle: const TextStyle(color: AppColors.textFaint),
+                prefixIcon: const Icon(Icons.search_rounded,
+                    color: AppColors.textMuted),
+                suffixIcon: _queryController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded,
+                            color: AppColors.textMuted, size: 18),
+                        onPressed: () {
+                          _queryController.clear();
+                          _search();
+                        },
                       )
-                    : _defaultAvatar(size: 80),
-              ),
-            ),
-            if (u.isPremium)
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: AppColors.premium,
-                  shape: BoxShape.circle,
+                    : null,
+                filled: true,
+                fillColor: AppColors.input,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                  borderSide: const BorderSide(color: AppColors.border),
                 ),
-                child: const Icon(Icons.star_rounded,
-                    color: Colors.black, size: 12),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Name
-        Text(
-          u.fullName,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '@${u.username}',
-          style: const TextStyle(
-              color: AppColors.textMuted, fontSize: 14),
-        ),
-        if (u.isPremium) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.premium.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(AppRadii.pill),
-              border: Border.all(
-                  color: AppColors.premium.withValues(alpha: 0.4)),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) => _search(),
+              textInputAction: TextInputAction.search,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.star_rounded,
-                    color: AppColors.premium, size: 13),
-                SizedBox(width: 4),
-                Text('Premium',
-                    style: TextStyle(
-                        color: AppColors.premium,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600)),
-              ],
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: _search,
+            child: Container(
+              width: 46,
+              height: 46,
+              decoration: AppDecorations.brandedMark(radius: AppRadii.md),
+              child: _loading
+                  ? const Center(
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.black),
+                      ),
+                    )
+                  : const Icon(Icons.search, color: Colors.black),
             ),
           ),
         ],
-        const SizedBox(height: 16),
-
-        // Actions row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Privacy toggle
-            _buildActionButton(
-              icon: u.isProfilePublic
-                  ? Icons.public_rounded
-                  : Icons.lock_rounded,
-              label: u.isProfilePublic ? 'Public' : 'Private',
-              onTap: _updatingVisibility ? null : _toggleProfileVisibility,
-              loading: _updatingVisibility,
-            ),
-            const SizedBox(width: 10),
-            // Stats toggle (premium only)
-            if (u.isPremium) ...[
-              _buildActionButton(
-                icon: Icons.bar_chart_rounded,
-                label: 'Stats',
-                onTap: () => setState(
-                    () => _showPremiumStats = !_showPremiumStats),
-                active: _showPremiumStats,
-              ),
-              const SizedBox(width: 10),
-              // Export (premium only)
-              _buildActionButton(
-                icon: Icons.download_outlined,
-                label: 'Export',
-                onTap: _exportData,
-              ),
-            ],
-          ],
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    VoidCallback? onTap,
-    bool loading = false,
-    bool active = false,
-  }) {
+  Widget _buildFilterChips() {
+    final bool hasActiveFilter =
+        _selectedGenreId != null || _selectedTypeId != null;
+
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        children: [
+          if (hasActiveFilter)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                label: const Text('Clear'),
+                avatar: const Icon(Icons.close_rounded, size: 14),
+                onPressed: _clearFilters,
+                backgroundColor: AppColors.error.withOpacity(0.12),
+                labelStyle: const TextStyle(
+                    color: AppColors.error, fontSize: 12),
+                side: const BorderSide(color: AppColors.error),
+              ),
+            ),
+          // Type filter
+          ..._contentTypes.map((ct) {
+            final selected = _selectedTypeId == ct.id;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text(ct.name),
+                selected: selected,
+                onSelected: (v) {
+                  setState(() =>
+                      _selectedTypeId = v ? ct.id : null);
+                  _search();
+                },
+                selectedColor: AppColors.primarySoft,
+                checkmarkColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: selected
+                      ? AppColors.primary
+                      : AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+                side: BorderSide(
+                  color:
+                      selected ? AppColors.primary : AppColors.border,
+                ),
+                backgroundColor: AppColors.card,
+              ),
+            );
+          }),
+          // Genre filter
+          ..._genres.take(10).map((g) {
+            final selected = _selectedGenreId == g.id;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text(g.name),
+                selected: selected,
+                onSelected: (v) {
+                  setState(
+                      () => _selectedGenreId = v ? g.id : null);
+                  _search();
+                },
+                selectedColor: AppColors.primarySoft,
+                checkmarkColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: selected
+                      ? AppColors.primary
+                      : AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+                side: BorderSide(
+                  color:
+                      selected ? AppColors.primary : AppColors.border,
+                ),
+                backgroundColor: AppColors.card,
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return GridView.builder(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 0.6,
+        ),
+        itemCount: 9,
+        itemBuilder: (_, __) =>
+            const SkeletonBox(width: double.infinity, height: double.infinity),
+      );
+    }
+
+    if (_results.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (_) => false,
+      child: GridView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 0.6,
+        ),
+        itemCount: _results.length + (_loadingMore ? 3 : 0),
+        itemBuilder: (_, i) {
+          if (i >= _results.length) {
+            return const SkeletonBox(
+                width: double.infinity, height: double.infinity);
+          }
+          final c = _results[i];
+          return _SearchResultCard(
+            content: c,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      ContentDetailScreen(contentId: c.id)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    if (_query.isEmpty &&
+        _selectedGenreId == null &&
+        _selectedTypeId == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.search_rounded,
+                color: AppColors.textFaint, size: 52),
+            SizedBox(height: 14),
+            Text(
+              'Search for anime, manga, series, games…',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.search_off_rounded,
+              color: AppColors.textFaint, size: 52),
+          const SizedBox(height: 14),
+          Text(
+            'No results for "$_query"',
+            style:
+                const TextStyle(color: AppColors.textMuted, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchResultCard extends StatelessWidget {
+  final Content content;
+  final VoidCallback onTap;
+
+  const _SearchResultCard({required this.content, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? AppColors.primarySoft : AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(AppRadii.sm),
-          border: Border.all(
-            color: active ? AppColors.primary : AppColors.border,
-          ),
-        ),
-        child: loading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AppColors.primary),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Icon(icon,
-                      color: active ? AppColors.primary : AppColors.textMuted,
-                      size: 15),
-                  const SizedBox(width: 5),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: active
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                  content.coverImageUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: content.coverImageUrl!,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) =>
+                              Container(color: AppColors.surface),
+                          errorWidget: (_, __, ___) =>
+                              Container(color: AppColors.surface,
+                                  child: const Center(child: Icon(
+                                      Icons.movie_rounded,
+                                      color: AppColors.textFaint,
+                                      size: 24))),
+                        )
+                      : Container(
+                          color: AppColors.surface,
+                          child: const Center(
+                            child: Icon(Icons.movie_rounded,
+                                color: AppColors.textFaint, size: 24),
+                          ),
+                        ),
+                  Positioned(
+                    top: 5,
+                    right: 5,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.overlay,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.star_rounded,
+                              color: AppColors.premium, size: 10),
+                          const SizedBox(width: 2),
+                          Text(
+                            ratingString(content.avgRating),
+                            style: const TextStyle(
+                              color: AppColors.premium,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
-      ),
-    );
-  }
-
-  Future<void> _exportData() async {
-    try {
-      final baseUrl = const String.fromEnvironment(
-        'baseUrl',
-        defaultValue: 'https://localhost:7204/api/',
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Export URL: ${baseUrl}export/me\n'
-              'Use a browser to download.'),
-          backgroundColor: AppColors.surface,
-        ),
-      );
-    } catch (_) {}
-  }
-
-  // ── STATS SECTION ────────────────────────────────────────────────────────────
-
-  Widget _buildStatsSection() {
-    if (_loadingStats) {
-      return _buildSectionSkeleton('Statistics');
-    }
-
-    if (_basicStats == null) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionTitle(title: 'Statistics'),
-          const SizedBox(height: 14),
-          // KPI row
-          Row(
-            children: [
-              Expanded(
-                  child: _KpiCard(
-                      value: '${_basicStats!.totalCompleted}',
-                      label: 'Completed',
-                      color: AppColors.success)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _KpiCard(
-                      value: '${_basicStats!.totalInProgress}',
-                      label: 'In Progress',
-                      color: AppColors.primary)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _KpiCard(
-                      value: '${_basicStats!.totalCancelled}',
-                      label: 'Cancelled',
-                      color: AppColors.error)),
-            ],
-          ),
-
-          // Streak
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                  child: _KpiCard(
-                      value: '${_basicStats!.currentStreak}',
-                      label: 'Current Streak',
-                      color: AppColors.warning,
-                      icon: Icons.local_fire_department_rounded)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _KpiCard(
-                      value: '${_basicStats!.longestStreak}',
-                      label: 'Longest Streak',
-                      color: AppColors.secondary)),
-            ],
-          ),
-
-          // Premium stats
-          if (AuthProvider.isPremium && _premiumStats != null &&
-              _showPremiumStats) ...[
-            const SizedBox(height: 20),
-            _buildPremiumStats(),
-          ] else if (AuthProvider.isPremium && !_showPremiumStats) ...[
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () =>
-                  setState(() => _showPremiumStats = true),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: AppDecorations.panel(
-                    borderColor: AppColors.premium),
-                child: const Row(
-                  children: [
-                    Icon(Icons.bar_chart_rounded,
-                        color: AppColors.premium),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Tap to view premium statistics',
-                        style: TextStyle(
-                            color: AppColors.premium,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Icon(Icons.chevron_right,
-                        color: AppColors.premium),
-                  ],
-                ),
-              ),
-            ),
-          ] else if (!AuthProvider.isPremium) ...[
-            const SizedBox(height: 12),
-            _buildPremiumLockedCard(),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPremiumStats() {
-    final ps = _premiumStats!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionTitle(title: 'Hours Tracked', small: true),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-                child: _KpiCard(
-                    value: ps.totalWatchHours.toStringAsFixed(1),
-                    label: 'Watch h',
-                    color: AppColors.info)),
-            const SizedBox(width: 10),
-            Expanded(
-                child: _KpiCard(
-                    value: ps.totalReadHours.toStringAsFixed(1),
-                    label: 'Read h',
-                    color: AppColors.success)),
-            const SizedBox(width: 10),
-            Expanded(
-                child: _KpiCard(
-                    value: ps.totalGameHours.toStringAsFixed(1),
-                    label: 'Game h',
-                    color: AppColors.warning)),
-          ],
-        ),
-        if (ps.topGenres.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          const _SectionTitle(title: 'Top Genres', small: true),
-          const SizedBox(height: 10),
-          ...ps.topGenres
-              .take(5)
-              .map((g) => _GenreStatRow(genre: g))
-              .toList(),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildPremiumLockedCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: AppDecorations.panel(),
-      child: Column(
-        children: [
-          const Icon(Icons.lock_rounded,
-              color: AppColors.textFaint, size: 32),
-          const SizedBox(height: 10),
-          const Text(
-            'Advanced Statistics',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
-          const Text(
-            'Upgrade to Premium to unlock hours tracked, genre breakdown, streak heatmap and Wrapped.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: AppColors.textMuted, fontSize: 13, height: 1.4),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () async {
-                final result = await Navigator.of(context).push<bool>(
-                  MaterialPageRoute(
-                    builder: (_) => const PremiumScreen(),
-                  ),
-                );
-                // Refresh user ako je uplatio
-                if (result == true && mounted) {
-                  _loadAll();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.premium,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(AppRadii.md)),
-              ),
-              child: const Text(
-                'Upgrade to Premium',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── ACHIEVEMENTS SECTION ─────────────────────────────────────────────────────
-
-  Widget _buildAchievementsSection() {
-    if (_loadingAchievements) {
-      return _buildSectionSkeleton('Achievements');
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionTitle(title: 'Achievements'),
-          const SizedBox(height: 14),
-          if (_achievements.isEmpty)
-            const Text(
-              'No achievements yet. Keep tracking to earn them!',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-            )
-          else
-            SizedBox(
-              height: 100,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _achievements.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (ctx, i) {
-                  final a = _achievements[i];
-                  return _AchievementChip(
-                    name: a['achievementName'] ?? '',
-                    iconUrl: a['achievementIconUrl'],
-                    earnedAt: a['earnedAt'] != null
-                        ? DateTime.parse(a['earnedAt'])
-                        : null,
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ── LISTS SECTION ────────────────────────────────────────────────────────────
-
-  Widget _buildListsSection() {
-    if (_loadingLists) {
-      return _buildSectionSkeleton('My Lists');
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionTitle(title: 'My Lists'),
-          const SizedBox(height: 14),
-          if (_myLists.isEmpty)
-            const Text(
-              'No lists yet. Create one from the Lists screen.',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-            )
-          else
-            ..._myLists.take(5).map((l) => _ListRow(list: l)).toList(),
-        ],
-      ),
-    );
-  }
-
-  // ── HELPERS ──────────────────────────────────────────────────────────────────
-
-  Widget _buildSectionSkeleton(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SkeletonBox(width: 120, height: 16),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: SkeletonBox(width: double.infinity, height: 72)),
-              const SizedBox(width: 10),
-              Expanded(child: SkeletonBox(width: double.infinity, height: 72)),
-              const SizedBox(width: 10),
-              Expanded(child: SkeletonBox(width: double.infinity, height: 72)),
-            ],
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _defaultAvatar({double size = 36}) {
-    return Container(
-      width: size,
-      height: size,
-      color: AppColors.surface,
-      child: Icon(Icons.person,
-          color: AppColors.textFaint, size: size * 0.5),
-    );
-  }
-}
-
-// ── SHARED SMALL WIDGETS ─────────────────────────────────────────────────────
-
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  final bool small;
-
-  const _SectionTitle({required this.title, this.small = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: small ? 14 : 16,
-        fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-}
-
-class _KpiCard extends StatelessWidget {
-  final String value;
-  final String label;
-  final Color color;
-  final IconData? icon;
-
-  const _KpiCard({
-    required this.value,
-    required this.label,
-    required this.color,
-    this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: AppDecorations.panel(),
-      child: Column(
-        children: [
-          if (icon != null) ...[
-            Icon(icon, color: color, size: 18),
-            const SizedBox(height: 4),
-          ],
+          const SizedBox(height: 5),
           Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: AppColors.textMuted, fontSize: 11),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GenreStatRow extends StatelessWidget {
-  final GenreStats genre;
-
-  const _GenreStatRow({required this.genre});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Text(
-              genre.genreName,
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 13),
-            ),
-          ),
-          Expanded(
-            flex: 4,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: genre.completionRate.clamp(0.0, 1.0),
-                backgroundColor: AppColors.surfaceElevated,
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                    AppColors.primary),
-                minHeight: 6,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 40,
-            child: Text(
-              '${(genre.completionRate * 100).round()}%',
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AchievementChip extends StatelessWidget {
-  final String name;
-  final String? iconUrl;
-  final DateTime? earnedAt;
-
-  const _AchievementChip(
-      {required this.name, this.iconUrl, this.earnedAt});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 86,
-      padding: const EdgeInsets.all(10),
-      decoration: AppDecorations.panel(),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          iconUrl != null && iconUrl!.isNotEmpty
-              ? CachedNetworkImage(
-                  imageUrl: iconUrl!,
-                  width: 32,
-                  height: 32,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const Icon(
-                      Icons.emoji_events_rounded,
-                      color: AppColors.premium,
-                      size: 32),
-                  errorWidget: (_, __, ___) => const Icon(
-                      Icons.emoji_events_rounded,
-                      color: AppColors.premium,
-                      size: 32),
-                )
-              : const Icon(Icons.emoji_events_rounded,
-                  color: AppColors.premium, size: 32),
-          const SizedBox(height: 6),
-          Text(
-            name,
+            content.title,
             maxLines: 2,
-            textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                height: 1.3),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ListRow extends StatelessWidget {
-  final UserList list;
-
-  const _ListRow({required this.list});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: AppDecorations.panel(),
-      child: Row(
-        children: [
-          Icon(
-            list.isShared
-                ? Icons.group_rounded
-                : list.isPublic
-                    ? Icons.public_rounded
-                    : Icons.lock_rounded,
-            color: AppColors.textMuted,
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              list.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
+              color: AppColors.textPrimary,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
             ),
           ),
-          Text(
-            '${list.itemCount} items',
-            style: const TextStyle(
-                color: AppColors.textMuted, fontSize: 12),
-          ),
+          if (content.contentTypeName != null)
+            Text(
+              content.contentTypeName!,
+              style: const TextStyle(
+                  color: AppColors.textFaint, fontSize: 10),
+            ),
         ],
       ),
     );

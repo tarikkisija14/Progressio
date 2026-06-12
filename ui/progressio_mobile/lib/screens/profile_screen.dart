@@ -12,9 +12,14 @@ import 'package:progressio_mobile/providers/stats_provider.dart';
 import 'package:progressio_mobile/providers/subscription_provider.dart';
 import 'package:progressio_mobile/providers/user_list_provider.dart';
 import 'package:progressio_mobile/providers/user_provider.dart';
+import 'package:progressio_mobile/screens/achievements_screen.dart';
+import 'package:progressio_mobile/screens/change_password_screen.dart';
+import 'package:progressio_mobile/screens/premium_screen.dart';
+import 'package:progressio_mobile/screens/stats_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
+
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -167,6 +172,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _buildHeader(),
               SliverToBoxAdapter(child: _buildStatsSection()),
               SliverToBoxAdapter(child: _buildAchievementsSection()),
+              SliverToBoxAdapter(child: _buildQuickLinks()),
               SliverToBoxAdapter(child: _buildListsSection()),
               const SliverToBoxAdapter(child: SizedBox(height: 32)),
             ],
@@ -568,7 +574,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {},
+              onPressed: () async {
+                final result = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => const PremiumScreen(),
+                  ),
+                );
+                if (result == true && mounted) {
+                  _loadAll();
+                }
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.premium,
                 foregroundColor: Colors.black,
@@ -654,6 +669,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
           else
             ..._myLists.take(5).map((l) => _ListRow(list: l)).toList(),
         ],
+      ),
+    );
+  }
+
+  // ── QUICK LINKS ──────────────────────────────────────────────────────────────
+
+  Widget _buildQuickLinks() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(title: 'More'),
+          const SizedBox(height: 10),
+          _quickLinkTile(
+            icon: Icons.bar_chart_rounded,
+            label: 'Full Stats',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const StatsScreen()),
+            ),
+          ),
+          _quickLinkTile(
+            icon: Icons.emoji_events_rounded,
+            label: 'All Achievements',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const AchievementsScreen()),
+            ),
+          ),
+          _quickLinkTile(
+            icon: Icons.lock_reset_rounded,
+            label: 'Change Password',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const ChangePasswordScreen()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickLinkTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadii.sm),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: AppDecorations.panel(),
+        child: Row(
+          children: [
+            Icon(icon, color: AppColors.textMuted, size: 18),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textFaint, size: 18),
+          ],
+        ),
       ),
     );
   }

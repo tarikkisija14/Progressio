@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:progressio_mobile/model/feed_item.dart';
 import 'package:progressio_mobile/providers/feed_provider.dart';
 import 'package:progressio_mobile/providers/user_provider.dart';
+import 'package:progressio_mobile/screens/user_profile_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
@@ -311,7 +312,15 @@ class _SocialScreenState extends State<SocialScreen> {
   Widget _buildFoundUser() {
     final user = _foundUser!;
     final isFollowing = user['isFollowing'] as bool;
-    return Container(
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              UserProfileScreen(userId: user['id'] as int),
+        ),
+      ),
+      child: Container(
       margin: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
       padding: const EdgeInsets.all(14),
@@ -378,6 +387,7 @@ class _SocialScreenState extends State<SocialScreen> {
             ),
         ],
       ),
+    ),
     );
   }
 
@@ -437,7 +447,14 @@ class _FeedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => UserProfileScreen(userId: item.actorUserId),
+        ),
+      ),
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: AppDecorations.panel(),
       child: Row(
@@ -461,6 +478,7 @@ class _FeedCard extends StatelessWidget {
             _buildCoverThumbnail(),
         ],
       ),
+    ),
     );
   }
 
