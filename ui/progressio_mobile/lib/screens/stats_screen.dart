@@ -8,6 +8,7 @@ import 'package:progressio_mobile/providers/stats_provider.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
+import 'package:progressio_mobile/screens/wrapped_screen.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -84,6 +85,7 @@ class _StatsScreenState extends State<StatsScreen> {
                           SliverToBoxAdapter(child: _buildHoursRow()),
                           SliverToBoxAdapter(child: _buildGenreChart()),
                           SliverToBoxAdapter(child: _buildHeatmap()),
+                          SliverToBoxAdapter(child: _buildWrappedBanner()),
                         ],
                       ] else
                         SliverToBoxAdapter(child: _buildPremiumLock()),
@@ -463,6 +465,56 @@ class _StatsScreenState extends State<StatsScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWrappedBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const WrappedScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.primary.withOpacity(0.35)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome_rounded,
+                  color: AppColors.primary, size: 24),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Year in Review',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'See your personal Wrapped for this year',
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.textFaint, size: 20),
+            ],
+          ),
         ),
       ),
     );

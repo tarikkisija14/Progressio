@@ -18,6 +18,10 @@ import 'package:progressio_mobile/screens/premium_screen.dart';
 import 'package:progressio_mobile/screens/stats_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
 
 
@@ -388,19 +392,78 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _exportData() async {
+    // Prikazujemo loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2, color: AppColors.primary),
+            ),
+            SizedBox(width: 12),
+            Text('Preparing export...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+        backgroundColor: AppColors.surface,
+      ),
+    );
+
     try {
       final baseUrl = const String.fromEnvironment(
         'baseUrl',
         defaultValue: 'https://localhost:7204/api/',
       );
+      final token = AuthProvider.token ?? '';
+      final url = '${baseUrl}export/me';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      if (response.statusCode == 200) {
+        // Spremi JSON fajl lokalno
+        final dir = await getApplicationDocumentsDirectory();
+        final fileName =
+            'progressio_export_\${DateTime.now().millisecondsSinceEpoch}.json';
+        final file = File('\${dir.path}/\$fileName');
+        await file.writeAsBytes(response.bodyBytes);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Export saved: \$fileName'),
+              backgroundColor: AppColors.success,
+              action: SnackBarAction(
+                label: 'OK',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
+            ),
+          );
+        }
+      } else {
+        throw Exception('Server returned \${response.statusCode}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Export URL: ${baseUrl}export/me\n'
-              'Use a browser to download.'),
-          backgroundColor: AppColors.surface,
+          content: Text('Export failed: \$e'),
+          backgroundColor: AppColors.error,
         ),
       );
-    } catch (_) {}
+    }
   }
 
   // ── STATS SECTION ────────────────────────────────────────────────────────────

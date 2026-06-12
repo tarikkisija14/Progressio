@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import 'package:progressio_mobile/model/notification_item.dart';
 import 'package:progressio_mobile/providers/notification_provider.dart';
+import 'package:progressio_mobile/screens/content_detail_screen.dart';
+import 'package:progressio_mobile/screens/user_profile_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
@@ -62,6 +64,37 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  /// Navigira na odgovarajući screen ovisno o tipu notifikacije i relatedEntityId.
+  void _handleTap(NotificationItem item) {
+    _markRead(item);
+
+    final entityId = item.relatedEntityId;
+    if (entityId == null) return;
+
+    final type = item.type.toLowerCase();
+
+    if (type == 'follow') {
+      // relatedEntityId je userId koji nas je pratio
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => UserProfileScreen(userId: entityId),
+        ),
+      );
+    } else if (type == 'achievement') {
+      // Achievement notifikacije nemaju specifičan entity screen — samo mark read
+    } else {
+      // 'episode', 'comment', 'listinvite' i sve ostalo:
+      // relatedEntityId je contentId
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ContentDetailScreen(contentId: entityId),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,11 +136,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       itemCount: _notifications.length,
                       separatorBuilder: (_, __) =>
                           const Divider(color: AppColors.hairline, height: 1),
-                      itemBuilder: (_, i) =>
-                          _NotificationTile(
-                            item: _notifications[i],
-                            onTap: () => _markRead(_notifications[i]),
-                          ),
+                      itemBuilder: (_, i) => _NotificationTile(
+                        item: _notifications[i],
+                        onTap: () => _handleTap(_notifications[i]),
+                      ),
                     ),
         ),
       ),
@@ -115,8 +147,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _markAllRead() async {
-    final unread =
-        _notifications.where((n) => !n.isRead).toList();
+    final unread = _notifications.where((n) => !n.isRead).toList();
     for (final item in unread) {
       await _markRead(item);
     }
@@ -195,9 +226,8 @@ class _NotificationTile extends StatelessWidget {
                     style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 13,
-                      fontWeight: item.isRead
-                          ? FontWeight.w500
-                          : FontWeight.w700,
+                      fontWeight:
+                          item.isRead ? FontWeight.w500 : FontWeight.w700,
                     ),
                   ),
                   if (item.message.isNotEmpty) ...[
@@ -211,10 +241,24 @@ class _NotificationTile extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 4),
-                  Text(
-                    _timeAgo(item.createdAt),
-                    style: const TextStyle(
-                        color: AppColors.textFaint, fontSize: 11),
+                  Row(
+                    children: [
+                      Text(
+                        _timeAgo(item.createdAt),
+                        style: const TextStyle(
+                            color: AppColors.textFaint, fontSize: 11),
+                      ),
+                      if (_isNavigable) ...[
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Tap to open →',
+                          style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -233,6 +277,13 @@ class _NotificationTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  bool get _isNavigable {
+    if (item.relatedEntityId == null) return false;
+    final t = item.type.toLowerCase();
+    return t == 'follow' || t == 'episode' || t == 'comment' ||
+        t == 'listinvite';
   }
 
   Widget _buildIcon() {
@@ -254,6 +305,10 @@ class _NotificationTile extends StatelessWidget {
       case 'episode':
         icon = Icons.play_circle_rounded;
         color = AppColors.primary;
+        break;
+      case 'listinvite':
+        icon = Icons.list_alt_rounded;
+        color = AppColors.success;
         break;
       default:
         icon = Icons.notifications_rounded;

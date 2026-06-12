@@ -7,6 +7,7 @@ import 'package:progressio_mobile/providers/calendar_provider.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
+import 'package:progressio_mobile/screens/content_detail_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -529,16 +530,27 @@ class _CalendarItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: AppDecorations.panel(),
-      child: Row(
-        children: [
-          _buildThumbnail(),
-          const SizedBox(width: 12),
-          Expanded(child: _buildInfo()),
-          _buildTypeDot(),
-        ],
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ContentDetailScreen(contentId: item.contentId),
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: AppDecorations.panel(),
+        child: Row(
+          children: [
+            _buildThumbnail(),
+            const SizedBox(width: 12),
+            Expanded(child: _buildInfo()),
+            _buildTypeDot(),
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textFaint, size: 18),
+          ],
+        ),
       ),
     );
   }
