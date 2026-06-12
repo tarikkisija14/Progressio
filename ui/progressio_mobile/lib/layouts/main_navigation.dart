@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:progressio_mobile/screens/calendar_screen.dart';
 import 'package:progressio_mobile/screens/home_screen.dart';
+import 'package:progressio_mobile/screens/my_lists_screen.dart';
 import 'package:progressio_mobile/screens/profile_screen.dart';
 import 'package:progressio_mobile/screens/search_screen.dart';
 import 'package:progressio_mobile/screens/social_screen.dart';
@@ -16,10 +16,10 @@ class MainNavigation extends StatefulWidget {
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
+  final List<Widget> _screens = [
     HomeScreen(),
     SearchScreen(),
-    CalendarScreen(),
+    MyListsScreen(),
     SocialScreen(),
     ProfileScreen(),
   ];
@@ -58,9 +58,9 @@ class _MainNavigationState extends State<MainNavigation> {
               label: 'Search',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.calendar_month_outlined),
-              activeIcon: Icon(Icons.calendar_month_rounded),
-              label: 'Calendar',
+              icon: Icon(Icons.list_alt_outlined),
+              activeIcon: Icon(Icons.list_alt_rounded),
+              label: 'Lists',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.people_outline),

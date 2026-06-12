@@ -27,6 +27,8 @@ import 'package:progressio_mobile/providers/user_list_provider.dart';
 import 'package:progressio_mobile/providers/user_provider.dart';
 import 'package:progressio_mobile/screens/login_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
+import 'package:progressio_mobile/providers/vote_provider.dart';
+
 
 void main() {
   HttpOverrides.global = _DevHttpOverrides();
@@ -53,6 +55,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => UserListProvider()),
         ChangeNotifierProvider(create: (_) => PaymentProvider()),
+        ChangeNotifierProvider(create: (_) => VoteProvider()),
       ],
       child: const ProgressioApp(),
     ),

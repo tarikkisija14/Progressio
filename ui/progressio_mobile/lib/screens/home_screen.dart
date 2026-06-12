@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:progressio_mobile/screens/calendar_screen.dart';
 
 import 'package:progressio_mobile/model/calendar_item.dart';
 import 'package:progressio_mobile/model/content.dart';
@@ -179,6 +180,13 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       actions: [
+        IconButton(
+          icon: const Icon(Icons.calendar_month_outlined,
+              color: AppColors.textSecondary),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const CalendarScreen()),
+          ),
+        ),
         IconButton(
           icon: const Icon(Icons.notifications_outlined,
               color: AppColors.textSecondary),

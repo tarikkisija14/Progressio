@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:progressio_mobile/layouts/main_navigation.dart';
 import 'package:progressio_mobile/providers/auth_provider.dart';
+import 'package:progressio_mobile/screens/register_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:http/http.dart' as http;
@@ -23,7 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   static const _baseUrl = String.fromEnvironment(
     'baseUrl',
-     defaultValue: 'https://localhost:7204/api/',
+    defaultValue: 'https://localhost:7204/api/',
   );
 
   @override
@@ -57,12 +58,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        AuthProvider.token = data['token'];
+        // Backend returns: { accessToken, refreshToken, user: { id, username, isPremium, ... } }
+        final user = data['user'] as Map<String, dynamic>;
+        AuthProvider.token = data['accessToken'];
         AuthProvider.refreshToken = data['refreshToken'];
         AuthProvider.username = username;
         AuthProvider.password = password;
-        AuthProvider.userId = data['userId'];
-        AuthProvider.isPremium = data['isPremium'] ?? false;
+        AuthProvider.userId = user['id'];
+        AuthProvider.isPremium = user['isPremium'] ?? false;
         AuthProvider.userRole = data['role'];
 
         if (mounted) {
@@ -72,14 +75,12 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       } else {
-          String message = 'Invalid credentials.';
-
-  try {
-    final data = jsonDecode(response.body);
-    message = data['message'] ?? message;
-  } catch (_) {}
-
-  setState(() => _error = message);
+        String message = 'Invalid credentials.';
+        try {
+          final data = jsonDecode(response.body);
+          message = data['message'] ?? message;
+        } catch (_) {}
+        setState(() => _error = message);
       }
     } catch (e) {
       setState(() => _error = 'Connection error. Check that the server is running.');
@@ -100,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 64),
-                // brand
+                // Brand
                 Row(
                   children: [
                     const AppBrandMark(size: 48, iconSize: 28),
@@ -114,7 +115,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: AppColors.textPrimary,
                             fontSize: 26,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 0,
                           ),
                         ),
                         Text(
@@ -138,28 +138,32 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                // username
+                // Username
                 TextField(
                   controller: _usernameCtrl,
                   style: const TextStyle(color: AppColors.textPrimary),
                   decoration: const InputDecoration(
                     labelText: 'Username',
-                    prefixIcon: Icon(Icons.person_outline, color: AppColors.textMuted, size: 20),
+                    prefixIcon: Icon(Icons.person_outline,
+                        color: AppColors.textMuted, size: 20),
                   ),
                   textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: 14),
-                // password
+                // Password
                 TextField(
                   controller: _passwordCtrl,
                   obscureText: _obscure,
                   style: const TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    prefixIcon: const Icon(Icons.lock_outline, color: AppColors.textMuted, size: 20),
+                    prefixIcon: const Icon(Icons.lock_outline,
+                        color: AppColors.textMuted, size: 20),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        _obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
                         color: AppColors.textMuted,
                         size: 20,
                       ),
@@ -171,26 +175,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.error.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.error_outline, color: AppColors.error, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(color: AppColors.error, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _ErrorBanner(message: _error!),
                 ],
                 const SizedBox(height: 28),
                 SizedBox(
@@ -207,13 +192,71 @@ class _LoginScreenState extends State<LoginScreen> {
                               strokeWidth: 2,
                             ),
                           )
-                        : const Text('Sign In', style: TextStyle(fontSize: 16)),
+                        : const Text('Sign In',
+                            style: TextStyle(fontSize: 16)),
                   ),
                 ),
+                const SizedBox(height: 20),
+                // Register link
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      "Don't have an account? ",
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 14),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const RegisterScreen()),
+                      ),
+                      child: const Text(
+                        'Sign Up',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+  const _ErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.error, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: AppColors.error, fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }

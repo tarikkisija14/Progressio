@@ -2,11 +2,19 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:progressio_mobile/model/content.dart';
-import 'package:progressio_mobile/providers/content_provider.dart';
-import 'package:progressio_mobile/providers/base_provider.dart';
-import 'package:progressio_mobile/screens/content_detail_screen.dart';
+import 'package:progressio_mobile/model/achievement.dart';
+import 'package:progressio_mobile/model/stats.dart';
+import 'package:progressio_mobile/model/user.dart';
+import 'package:progressio_mobile/model/user_list.dart';
+import 'package:progressio_mobile/providers/achievement_provider.dart';
+import 'package:progressio_mobile/providers/auth_provider.dart';
+import 'package:progressio_mobile/providers/stats_provider.dart';
+import 'package:progressio_mobile/providers/subscription_provider.dart';
+import 'package:progressio_mobile/providers/user_list_provider.dart';
+import 'package:progressio_mobile/providers/user_provider.dart';
+import 'package:progressio_mobile/screens/premium_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
+import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -16,335 +24,894 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> {
-  final _ctrl = TextEditingController();
-  final _focusNode = FocusNode();
+class _SearchScreenState extends State<SearchScreen>  {
+  AppUser? _user;
+  BasicStats? _basicStats;
+  PremiumStats? _premiumStats;
+  List<dynamic> _achievements = []; // UserAchievementResponse
+  List<UserList> _myLists = [];
 
-  List<Content> _results = [];
-  bool _loading = false;
-  bool _searched = false;
+  bool _loadingUser = true;
+  bool _loadingStats = true;
+  bool _loadingAchievements = true;
+  bool _loadingLists = true;
+  bool _updatingVisibility = false;
+  bool _showPremiumStats = false;
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    _focusNode.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _loadAll();
   }
 
-  Future<void> _search(String query) async {
-    final q = query.trim();
-    if (q.isEmpty) {
-      setState(() {
-        _results = [];
-        _searched = false;
-      });
-      return;
-    }
-    setState(() => _loading = true);
+  Future<void> _loadAll() async {
+    await Future.wait([
+      _loadUser(),
+      _loadStats(),
+      _loadAchievements(),
+      _loadLists(),
+    ]);
+  }
+
+  Future<void> _loadUser() async {
+    setState(() => _loadingUser = true);
     try {
-      final result = await context
-          .read<ContentProvider>()
-          .get(filter: {'page': 1, 'pageSize': 30, 'title': q, 'isActive': true});
+      final user = await context.read<UserProvider>().getMe();
       if (mounted) {
         setState(() {
-          _results = result.items;
-          _searched = true;
-          _loading = false;
+          _user = user;
+          AuthProvider.isPremium = user.isPremium;
         });
-        // Faza 13 — log pretrage kao signal za recommender
-        // POST /api/searchlogs  (fire and forget, ne blokiramo UI)
-        _logSearch(q, result.items.length);
       }
     } catch (e) {
-      if (mounted) setState(() => _loading = false);
+      debugPrint('Profile load user error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingUser = false);
     }
   }
 
-  /// POST /api/searchlogs — bilježi pretragu za recommender signal.
-  /// Fire-and-forget: greška se tiho zanemaruje da ne prekida UX.
-  void _logSearch(String query, int resultCount) {
-    context.read<ContentProvider>().postRaw('searchlogs', {
-      'query': query,
-      'resultCount': resultCount,
-    }).catchError((_) {});
+  Future<void> _loadStats() async {
+    setState(() => _loadingStats = true);
+    try {
+      final basic =
+          await context.read<StatsProvider>().getBasicStats();
+      if (mounted) setState(() => _basicStats = basic);
+
+      if (AuthProvider.isPremium) {
+        try {
+          final premium =
+              await context.read<StatsProvider>().getPremiumStats();
+          if (mounted) setState(() => _premiumStats = premium);
+        } catch (_) {
+          // 403 for free users
+        }
+      }
+    } catch (e) {
+      debugPrint('Profile load stats error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingStats = false);
+    }
+  }
+
+  Future<void> _loadAchievements() async {
+    setState(() => _loadingAchievements = true);
+    try {
+      final userId = AuthProvider.userId ?? 0;
+      if (userId == 0) return;
+      final data = await context
+          .read<AchievementProvider>()
+          .getRaw('achievements/my', query: {'page': 1, 'pageSize': 10});
+      if (mounted) {
+        final list = data is Map ? (data['items'] ?? []) : (data ?? []);
+        setState(() => _achievements = list as List);
+      }
+    } catch (e) {
+      debugPrint('Profile load achievements error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingAchievements = false);
+    }
+  }
+
+  Future<void> _loadLists() async {
+    setState(() => _loadingLists = true);
+    try {
+      final lists =
+          await context.read<UserListProvider>().getMyLists();
+      if (mounted) setState(() => _myLists = lists);
+    } catch (e) {
+      debugPrint('Profile load lists error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingLists = false);
+    }
+  }
+
+  Future<void> _toggleProfileVisibility() async {
+    if (_user == null || _updatingVisibility) return;
+    setState(() => _updatingVisibility = true);
+    try {
+      await context.read<UserProvider>().getRaw(
+            'auth/profile-visibility',
+          );
+      // PUT endpoint: PUT /api/auth/profile-visibility {isPublic: bool}
+      // Using putRaw via base_provider
+      await context.read<UserProvider>().putRaw(
+            'auth/profile-visibility',
+            {'isPublic': !_user!.isProfilePublic},
+          );
+      await _loadUser();
+    } catch (e) {
+      debugPrint('Toggle visibility error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update profile visibility.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updatingVisibility = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildSearchBar(),
-            Expanded(child: _buildBody()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: TextField(
-        controller: _ctrl,
-        focusNode: _focusNode,
-        autofocus: false,
-        textInputAction: TextInputAction.search,
-        onSubmitted: _search,
-        onChanged: (v) {
-          if (v.isEmpty) {
-            setState(() {
-              _results = [];
-              _searched = false;
-            });
-          }
-        },
-        style: const TextStyle(color: AppColors.textPrimary),
-        decoration: InputDecoration(
-          hintText: 'Search movies, series, books…',
-          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textFaint),
-          suffixIcon: _ctrl.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textFaint),
-                  onPressed: () {
-                    _ctrl.clear();
-                    setState(() {
-                      _results = [];
-                      _searched = false;
-                    });
-                  },
-                )
-              : null,
-          filled: true,
-          fillColor: AppColors.input,
-          hintStyle: const TextStyle(color: AppColors.textFaint),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_loading) return _buildSkeleton();
-    if (!_searched) return _buildEmptyState();
-    if (_results.isEmpty) return _buildNoResults();
-    return _buildResults();
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.search_rounded, color: AppColors.textFaint, size: 56),
-          const SizedBox(height: 16),
-          const Text(
-            'Search for content',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 16),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Movies, series, anime, books, games…',
-            style: TextStyle(color: AppColors.textFaint, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoResults() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.search_off_rounded, color: AppColors.textFaint, size: 56),
-          const SizedBox(height: 16),
-          Text(
-            'No results for "${_ctrl.text}"',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 15),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResults() {
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: _results.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 2),
-      itemBuilder: (_, i) => _SearchResultTile(
-        content: _results[i],
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ContentDetailScreen(contentId: _results[i].id),
+      body: AppShellBackground(
+        child: RefreshIndicator(
+          onRefresh: _loadAll,
+          color: AppColors.primary,
+          backgroundColor: AppColors.card,
+          child: CustomScrollView(
+            slivers: [
+              _buildHeader(),
+              SliverToBoxAdapter(child: _buildStatsSection()),
+              SliverToBoxAdapter(child: _buildAchievementsSection()),
+              SliverToBoxAdapter(child: _buildListsSection()),
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildSkeleton() {
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: 8,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, __) => const _SearchSkeletonTile(),
-    );
-  }
-}
+  // ── HEADER ──────────────────────────────────────────────────────────────────
 
-class _SearchResultTile extends StatelessWidget {
-  final Content content;
-  final VoidCallback onTap;
-
-  const _SearchResultTile({required this.content, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+  Widget _buildHeader() {
+    return SliverToBoxAdapter(
       child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          MediaQuery.of(context).padding.top + AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
         ),
-        child: Row(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [AppColors.primarySubtle, Colors.transparent],
+          ),
+        ),
+        child: _loadingUser ? _buildHeaderSkeleton() : _buildHeaderContent(),
+      ),
+    );
+  }
+
+  Widget _buildHeaderSkeleton() {
+    return Column(
+      children: const [
+        SkeletonBox(width: 80, height: 80, radius: 40),
+        SizedBox(height: 12),
+        SkeletonBox(width: 140, height: 18),
+        SizedBox(height: 6),
+        SkeletonBox(width: 100, height: 14),
+      ],
+    );
+  }
+
+  Widget _buildHeaderContent() {
+    if (_user == null) return const SizedBox.shrink();
+    final u = _user!;
+
+    return Column(
+      children: [
+        // Avatar
+        Stack(
+          alignment: Alignment.bottomRight,
           children: [
-            _buildCover(),
-            const SizedBox(width: 12),
-            Expanded(child: _buildInfo()),
+            ClipOval(
+              child: SizedBox(
+                width: 80,
+                height: 80,
+                child: u.profileImageUrl != null &&
+                        u.profileImageUrl!.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: u.profileImageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) =>
+                            Container(color: AppColors.surface),
+                        errorWidget: (_, __, ___) =>
+                            _defaultAvatar(size: 80),
+                      )
+                    : _defaultAvatar(size: 80),
+              ),
+            ),
+            if (u.isPremium)
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: AppColors.premium,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.star_rounded,
+                    color: Colors.black, size: 12),
+              ),
           ],
         ),
-      ),
-    );
-  }
+        const SizedBox(height: 12),
 
-  Widget _buildCover() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: 48,
-        height: 72,
-        child: content.coverImageUrl != null && content.coverImageUrl!.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: content.coverImageUrl!,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: AppColors.surface),
-                errorWidget: (_, __, ___) => _noImage(),
-              )
-            : _noImage(),
-      ),
-    );
-  }
-
-  Widget _noImage() => Container(
-        color: AppColors.surface,
-        child: const Icon(Icons.movie_rounded, color: AppColors.textFaint, size: 20),
-      );
-
-  Widget _buildInfo() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+        // Name
         Text(
-          content.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+          u.fullName,
           style: const TextStyle(
             color: AppColors.textPrimary,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 4),
+        Text(
+          '@${u.username}',
+          style: const TextStyle(
+              color: AppColors.textMuted, fontSize: 14),
+        ),
+        if (u.isPremium) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.premium.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+              border: Border.all(
+                  color: AppColors.premium.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.star_rounded,
+                    color: AppColors.premium, size: 13),
+                SizedBox(width: 4),
+                Text('Premium',
+                    style: TextStyle(
+                        color: AppColors.premium,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+
+        // Actions row
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (content.contentTypeName != null)
-              _chip(content.contentTypeName!, AppColors.primarySoft, AppColors.primary),
-            if (content.releaseYear != null) ...[
-              const SizedBox(width: 6),
-              Text(
-                '${content.releaseYear}',
-                style: const TextStyle(color: AppColors.textFaint, fontSize: 12),
+            // Privacy toggle
+            _buildActionButton(
+              icon: u.isProfilePublic
+                  ? Icons.public_rounded
+                  : Icons.lock_rounded,
+              label: u.isProfilePublic ? 'Public' : 'Private',
+              onTap: _updatingVisibility ? null : _toggleProfileVisibility,
+              loading: _updatingVisibility,
+            ),
+            const SizedBox(width: 10),
+            // Stats toggle (premium only)
+            if (u.isPremium) ...[
+              _buildActionButton(
+                icon: Icons.bar_chart_rounded,
+                label: 'Stats',
+                onTap: () => setState(
+                    () => _showPremiumStats = !_showPremiumStats),
+                active: _showPremiumStats,
+              ),
+              const SizedBox(width: 10),
+              // Export (premium only)
+              _buildActionButton(
+                icon: Icons.download_outlined,
+                label: 'Export',
+                onTap: _exportData,
               ),
             ],
-          ],
-        ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            const Icon(Icons.star_rounded, color: AppColors.premium, size: 13),
-            const SizedBox(width: 3),
-            Text(
-              content.avgRating.toStringAsFixed(1),
-              style: const TextStyle(color: AppColors.premium, fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '(${content.totalRatings})',
-              style: const TextStyle(color: AppColors.textFaint, fontSize: 11),
-            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _chip(String label, Color bg, Color fg) {
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    VoidCallback? onTap,
+    bool loading = false,
+    bool active = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? AppColors.primarySoft : AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(AppRadii.sm),
+          border: Border.all(
+            color: active ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: loading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.primary),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon,
+                      color: active ? AppColors.primary : AppColors.textMuted,
+                      size: 15),
+                  const SizedBox(width: 5),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: active
+                          ? AppColors.primary
+                          : AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Future<void> _exportData() async {
+    try {
+      final baseUrl = const String.fromEnvironment(
+        'baseUrl',
+        defaultValue: 'https://localhost:7204/api/',
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export URL: ${baseUrl}export/me\n'
+              'Use a browser to download.'),
+          backgroundColor: AppColors.surface,
+        ),
+      );
+    } catch (_) {}
+  }
+
+  // ── STATS SECTION ────────────────────────────────────────────────────────────
+
+  Widget _buildStatsSection() {
+    if (_loadingStats) {
+      return _buildSectionSkeleton('Statistics');
+    }
+
+    if (_basicStats == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(title: 'Statistics'),
+          const SizedBox(height: 14),
+          // KPI row
+          Row(
+            children: [
+              Expanded(
+                  child: _KpiCard(
+                      value: '${_basicStats!.totalCompleted}',
+                      label: 'Completed',
+                      color: AppColors.success)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _KpiCard(
+                      value: '${_basicStats!.totalInProgress}',
+                      label: 'In Progress',
+                      color: AppColors.primary)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _KpiCard(
+                      value: '${_basicStats!.totalCancelled}',
+                      label: 'Cancelled',
+                      color: AppColors.error)),
+            ],
+          ),
+
+          // Streak
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                  child: _KpiCard(
+                      value: '${_basicStats!.currentStreak}',
+                      label: 'Current Streak',
+                      color: AppColors.warning,
+                      icon: Icons.local_fire_department_rounded)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _KpiCard(
+                      value: '${_basicStats!.longestStreak}',
+                      label: 'Longest Streak',
+                      color: AppColors.secondary)),
+            ],
+          ),
+
+          // Premium stats
+          if (AuthProvider.isPremium && _premiumStats != null &&
+              _showPremiumStats) ...[
+            const SizedBox(height: 20),
+            _buildPremiumStats(),
+          ] else if (AuthProvider.isPremium && !_showPremiumStats) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _showPremiumStats = true),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: AppDecorations.panel(
+                    borderColor: AppColors.premium),
+                child: const Row(
+                  children: [
+                    Icon(Icons.bar_chart_rounded,
+                        color: AppColors.premium),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Tap to view premium statistics',
+                        style: TextStyle(
+                            color: AppColors.premium,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right,
+                        color: AppColors.premium),
+                  ],
+                ),
+              ),
+            ),
+          ] else if (!AuthProvider.isPremium) ...[
+            const SizedBox(height: 12),
+            _buildPremiumLockedCard(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumStats() {
+    final ps = _premiumStats!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle(title: 'Hours Tracked', small: true),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+                child: _KpiCard(
+                    value: ps.totalWatchHours.toStringAsFixed(1),
+                    label: 'Watch h',
+                    color: AppColors.info)),
+            const SizedBox(width: 10),
+            Expanded(
+                child: _KpiCard(
+                    value: ps.totalReadHours.toStringAsFixed(1),
+                    label: 'Read h',
+                    color: AppColors.success)),
+            const SizedBox(width: 10),
+            Expanded(
+                child: _KpiCard(
+                    value: ps.totalGameHours.toStringAsFixed(1),
+                    label: 'Game h',
+                    color: AppColors.warning)),
+          ],
+        ),
+        if (ps.topGenres.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const _SectionTitle(title: 'Top Genres', small: true),
+          const SizedBox(height: 10),
+          ...ps.topGenres
+              .take(5)
+              .map((g) => _GenreStatRow(genre: g))
+              .toList(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPremiumLockedCard() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-      child: Text(label, style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600)),
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.panel(),
+      child: Column(
+        children: [
+          const Icon(Icons.lock_rounded,
+              color: AppColors.textFaint, size: 32),
+          const SizedBox(height: 10),
+          const Text(
+            'Advanced Statistics',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Upgrade to Premium to unlock hours tracked, genre breakdown, streak heatmap and Wrapped.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: AppColors.textMuted, fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async {
+                final result = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute(
+                    builder: (_) => const PremiumScreen(),
+                  ),
+                );
+                // Refresh user ako je uplatio
+                if (result == true && mounted) {
+                  _loadAll();
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.premium,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.circular(AppRadii.md)),
+              ),
+              child: const Text(
+                'Upgrade to Premium',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── ACHIEVEMENTS SECTION ─────────────────────────────────────────────────────
+
+  Widget _buildAchievementsSection() {
+    if (_loadingAchievements) {
+      return _buildSectionSkeleton('Achievements');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(title: 'Achievements'),
+          const SizedBox(height: 14),
+          if (_achievements.isEmpty)
+            const Text(
+              'No achievements yet. Keep tracking to earn them!',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            )
+          else
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _achievements.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (ctx, i) {
+                  final a = _achievements[i];
+                  return _AchievementChip(
+                    name: a['achievementName'] ?? '',
+                    iconUrl: a['achievementIconUrl'],
+                    earnedAt: a['earnedAt'] != null
+                        ? DateTime.parse(a['earnedAt'])
+                        : null,
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── LISTS SECTION ────────────────────────────────────────────────────────────
+
+  Widget _buildListsSection() {
+    if (_loadingLists) {
+      return _buildSectionSkeleton('My Lists');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle(title: 'My Lists'),
+          const SizedBox(height: 14),
+          if (_myLists.isEmpty)
+            const Text(
+              'No lists yet. Create one from the Lists screen.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            )
+          else
+            ..._myLists.take(5).map((l) => _ListRow(list: l)).toList(),
+        ],
+      ),
+    );
+  }
+
+  // ── HELPERS ──────────────────────────────────────────────────────────────────
+
+  Widget _buildSectionSkeleton(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonBox(width: 120, height: 16),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: SkeletonBox(width: double.infinity, height: 72)),
+              const SizedBox(width: 10),
+              Expanded(child: SkeletonBox(width: double.infinity, height: 72)),
+              const SizedBox(width: 10),
+              Expanded(child: SkeletonBox(width: double.infinity, height: 72)),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _defaultAvatar({double size = 36}) {
+    return Container(
+      width: size,
+      height: size,
+      color: AppColors.surface,
+      child: Icon(Icons.person,
+          color: AppColors.textFaint, size: size * 0.5),
     );
   }
 }
 
-class _SearchSkeletonTile extends StatelessWidget {
-  const _SearchSkeletonTile();
+// ── SHARED SMALL WIDGETS ─────────────────────────────────────────────────────
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  final bool small;
+
+  const _SectionTitle({required this.title, this.small = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: small ? 14 : 16,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  final String value;
+  final String label;
+  final Color color;
+  final IconData? icon;
+
+  const _KpiCard({
+    required this.value,
+    required this.label,
+    required this.color,
+    this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: const Row(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: AppDecorations.panel(),
+      child: Column(
         children: [
-          SkeletonBox(width: 48, height: 72, radius: 8),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SkeletonBox(width: double.infinity, height: 14),
-                SizedBox(height: 6),
-                SkeletonBox(width: 80, height: 20),
-                SizedBox(height: 6),
-                SkeletonBox(width: 60, height: 12),
-              ],
+          if (icon != null) ...[
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 4),
+          ],
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
             ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: AppColors.textMuted, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GenreStatRow extends StatelessWidget {
+  final GenreStats genre;
+
+  const _GenreStatRow({required this.genre});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              genre.genreName,
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: genre.completionRate.clamp(0.0, 1.0),
+                backgroundColor: AppColors.surfaceElevated,
+                valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppColors.primary),
+                minHeight: 6,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 40,
+            child: Text(
+              '${(genre.completionRate * 100).round()}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AchievementChip extends StatelessWidget {
+  final String name;
+  final String? iconUrl;
+  final DateTime? earnedAt;
+
+  const _AchievementChip(
+      {required this.name, this.iconUrl, this.earnedAt});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 86,
+      padding: const EdgeInsets.all(10),
+      decoration: AppDecorations.panel(),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          iconUrl != null && iconUrl!.isNotEmpty
+              ? CachedNetworkImage(
+                  imageUrl: iconUrl!,
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Icon(
+                      Icons.emoji_events_rounded,
+                      color: AppColors.premium,
+                      size: 32),
+                  errorWidget: (_, __, ___) => const Icon(
+                      Icons.emoji_events_rounded,
+                      color: AppColors.premium,
+                      size: 32),
+                )
+              : const Icon(Icons.emoji_events_rounded,
+                  color: AppColors.premium, size: 32),
+          const SizedBox(height: 6),
+          Text(
+            name,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                height: 1.3),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ListRow extends StatelessWidget {
+  final UserList list;
+
+  const _ListRow({required this.list});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: AppDecorations.panel(),
+      child: Row(
+        children: [
+          Icon(
+            list.isShared
+                ? Icons.group_rounded
+                : list.isPublic
+                    ? Icons.public_rounded
+                    : Icons.lock_rounded,
+            color: AppColors.textMuted,
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              list.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            '${list.itemCount} items',
+            style: const TextStyle(
+                color: AppColors.textMuted, fontSize: 12),
           ),
         ],
       ),

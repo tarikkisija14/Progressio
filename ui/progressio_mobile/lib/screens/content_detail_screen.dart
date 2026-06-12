@@ -18,9 +18,12 @@ import 'package:progressio_mobile/providers/episode_provider.dart';
 import 'package:progressio_mobile/providers/progress_provider.dart';
 import 'package:progressio_mobile/providers/review_provider.dart';
 import 'package:progressio_mobile/providers/season_provider.dart';
+import 'package:progressio_mobile/providers/vote_provider.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/utils/utils.dart';
+import 'package:progressio_mobile/widgets/add_to_list_sheet.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
+import 'package:progressio_mobile/widgets/vote_dialog.dart';
 
 class ContentDetailScreen extends StatefulWidget {
   final int contentId;
@@ -236,6 +239,14 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
         _progress = progress;
         _updatingStatus = false;
       });
+      // Voting za najdražeg lika (film, igrica, knjiga — ne serija)
+      if (mounted && !_isSeriesType && _characters.isNotEmpty) {
+        await showVoteDialog(
+          context,
+          characters: _characters,
+          label: 'Pick your favourite character!',
+        );
+      }
     } catch (_) {
       if (mounted) setState(() => _updatingStatus = false);
     }
@@ -254,6 +265,14 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
         _progress = updated;
         _updatingStatus = false;
       });
+      // Nakon Completed → glasaj za najdražeg lika (film/igrica/knjiga)
+      if (mounted && newStatus == 'Completed' && !_isSeriesType && _characters.isNotEmpty) {
+        await showVoteDialog(
+          context,
+          characters: _characters,
+          label: 'Favourite character in this?',
+        );
+      }
     } catch (_) {
       if (mounted) setState(() => _updatingStatus = false);
     }
@@ -451,6 +470,27 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                   ],
                   const SizedBox(height: 12),
                   _buildStatusButtons(),
+                  const SizedBox(height: 10),
+                  // Add to List
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => showAddToListSheet(
+                        context,
+                        contentId: widget.contentId,
+                      ),
+                      icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                      label: const Text('Add to list'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textSecondary,
+                        side: const BorderSide(color: AppColors.border),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 10, horizontal: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -777,6 +817,15 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                   .read<ProgressProvider>()
                   .getForContent(widget.contentId);
               if (mounted) setState(() => _progress = updated);
+              // Glasanje za najdražeg lika u ovoj epizodi
+              if (mounted && _characters.isNotEmpty) {
+                await showVoteDialog(
+                  context,
+                  characters: _characters,
+                  episodeId: episodeId,
+                  label: 'Best character in this episode?',
+                );
+              }
             }
           },
         );
@@ -843,6 +892,15 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                         .read<ProgressProvider>()
                         .getForContent(widget.contentId);
                     if (mounted) setState(() => _progress = updated);
+                    // Glasanje za najdražeg lika u ovom chapteru
+                    if (mounted && _characters.isNotEmpty) {
+                      await showVoteDialog(
+                        context,
+                        characters: _characters,
+                        chapterId: ch.id,
+                        label: 'Best character in this chapter?',
+                      );
+                    }
                   },
                 )
               : null,
