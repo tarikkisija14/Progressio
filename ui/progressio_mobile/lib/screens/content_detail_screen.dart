@@ -1,5 +1,3 @@
-
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -43,6 +41,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
   List<Chapter> _chapters = [];
   List<Character> _characters = [];
   List<Review> _reviews = [];
+  Review? _myReview;
 
   bool _loadingContent = true;
   bool _loadingSeasons = false;
@@ -210,17 +209,36 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
   Future<void> _loadReviews() async {
     setState(() => _loadingReviews = true);
     try {
-      final reviews = await context
-          .read<ReviewProvider>()
-          .getForContent(widget.contentId);
+      final reviewProvider = context.read<ReviewProvider>();
+      final reviews = await reviewProvider.getForContent(widget.contentId);
+      final myReview = await reviewProvider.getMyReview(widget.contentId);
       if (mounted) {
         setState(() {
           _reviews = reviews;
+          _myReview = myReview;
           _loadingReviews = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _loadingReviews = false);
+    }
+  }
+
+  Future<void> _openReviewSheet() async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => _ReviewEditorSheet(
+        contentId: widget.contentId,
+        existingReview: _myReview,
+        provider: context.read<ReviewProvider>(),
+      ),
+    );
+    if (saved == true) {
+      _loadReviews();
     }
   }
 
@@ -941,25 +959,69 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
       return const Center(
           child: CircularProgressIndicator(color: AppColors.primary));
     }
+
+    final canReview = _progress?.status == 'Completed';
+    final reviewButton = canReview ? _buildReviewButton() : null;
+
     if (_reviews.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.rate_review_outlined,
-                color: AppColors.textFaint, size: 48),
-            SizedBox(height: 12),
-            Text('No reviews yet.',
-                style: TextStyle(color: AppColors.textMuted)),
-          ],
-        ),
+      return Column(
+        children: [
+          if (reviewButton != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 0),
+              child: reviewButton,
+            ),
+          const Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.rate_review_outlined,
+                      color: AppColors.textFaint, size: 48),
+                  SizedBox(height: 12),
+                  Text('No reviews yet.',
+                      style: TextStyle(color: AppColors.textMuted)),
+                ],
+              ),
+            ),
+          ),
+        ],
       );
     }
+
     return ListView.separated(
       padding: const EdgeInsets.all(18),
-      itemCount: _reviews.length,
+      itemCount: _reviews.length + (reviewButton != null ? 1 : 0),
       separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (_, i) => _ReviewCard(review: _reviews[i]),
+      itemBuilder: (_, i) {
+        if (reviewButton != null) {
+          if (i == 0) return reviewButton;
+          return _ReviewCard(review: _reviews[i - 1]);
+        }
+        return _ReviewCard(review: _reviews[i]);
+      },
+    );
+  }
+
+  Widget _buildReviewButton() {
+    final hasReview = _myReview != null;
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _openReviewSheet,
+        icon: Icon(
+          hasReview ? Icons.edit_rounded : Icons.rate_review_rounded,
+          size: 18,
+        ),
+        label: Text(hasReview ? 'Edit Your Review' : 'Write a Review'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          side: const BorderSide(color: AppColors.primary),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
+        ),
+      ),
     );
   }
 }
@@ -1370,6 +1432,205 @@ class _ReviewCardState extends State<_ReviewCard> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Review Editor Sheet ──────────────────────────────────────────────────────
+
+class _ReviewEditorSheet extends StatefulWidget {
+  final int contentId;
+  final Review? existingReview;
+  final ReviewProvider provider;
+
+  const _ReviewEditorSheet({
+    required this.contentId,
+    required this.existingReview,
+    required this.provider,
+  });
+
+  @override
+  State<_ReviewEditorSheet> createState() => _ReviewEditorSheetState();
+}
+
+class _ReviewEditorSheetState extends State<_ReviewEditorSheet> {
+  late int _rating;
+  late TextEditingController _titleCtrl;
+  late TextEditingController _bodyCtrl;
+  late bool _hasSpoiler;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existingReview;
+    _rating = existing?.rating ?? 0;
+    _titleCtrl = TextEditingController(text: existing?.title ?? '');
+    _bodyCtrl = TextEditingController(text: existing?.body ?? '');
+    _hasSpoiler = existing?.hasSpoiler ?? false;
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _bodyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_rating < 1) {
+      setState(() => _error = 'Please select a rating.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    final title = _titleCtrl.text.trim();
+    final body = _bodyCtrl.text.trim();
+
+    try {
+      final existing = widget.existingReview;
+      if (existing != null) {
+        await widget.provider.updateReview(
+          existing.id,
+          rating: _rating,
+          title: title.isEmpty ? null : title,
+          body: body.isEmpty ? null : body,
+          hasSpoiler: _hasSpoiler,
+        );
+      } else {
+        await widget.provider.createReview(
+          contentId: widget.contentId,
+          rating: _rating,
+          title: title.isEmpty ? null : title,
+          body: body.isEmpty ? null : body,
+          hasSpoiler: _hasSpoiler,
+        );
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = 'Failed to save review: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.existingReview != null;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isEditing ? 'Edit Your Review' : 'Write a Review',
+              style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(5, (i) {
+                final starIndex = i + 1;
+                return IconButton(
+                  onPressed: () => setState(() => _rating = starIndex),
+                  icon: Icon(
+                    starIndex <= _rating
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    color: AppColors.premium,
+                    size: 32,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 40),
+                );
+              }),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _titleCtrl,
+              maxLength: 100,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Title (optional)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _bodyCtrl,
+              maxLines: 4,
+              maxLength: 2000,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                hintText: 'Share your thoughts… (optional)',
+              ),
+            ),
+            SwitchListTile(
+              value: _hasSpoiler,
+              onChanged: (v) => setState(() => _hasSpoiler = v),
+              title: const Text('Contains spoiler',
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+              activeColor: AppColors.warning,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                _error!,
+                style: const TextStyle(color: AppColors.error, fontSize: 13),
+              ),
+            ],
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.black))
+                    : Text(
+                        isEditing ? 'Update Review' : 'Post Review',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

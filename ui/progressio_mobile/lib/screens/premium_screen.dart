@@ -1,8 +1,8 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
 
+import 'package:progressio_mobile/providers/auth_provider.dart';
 import 'package:progressio_mobile/providers/payment_provider.dart';
 import 'package:progressio_mobile/providers/subscription_provider.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
@@ -56,7 +56,11 @@ class _PremiumScreenState extends State<PremiumScreen> {
       await Stripe.instance.presentPaymentSheet();
 
       
-      await context.read<SubscriptionProvider>().getMine();
+      final subscription =
+          await context.read<SubscriptionProvider>().getMine();
+      if (subscription != null) {
+        AuthProvider.isPremium = subscription.isPremium;
+      }
 
       if (mounted) setState(() { _loading = false; _success = true; });
 
