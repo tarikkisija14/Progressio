@@ -14,6 +14,7 @@ import 'package:progressio_mobile/providers/user_list_provider.dart';
 import 'package:progressio_mobile/providers/user_provider.dart';
 import 'package:progressio_mobile/screens/achievements_screen.dart';
 import 'package:progressio_mobile/screens/change_password_screen.dart';
+import 'package:progressio_mobile/screens/login_screen.dart';
 import 'package:progressio_mobile/screens/premium_screen.dart';
 import 'package:progressio_mobile/screens/stats_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
@@ -36,7 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   AppUser? _user;
   BasicStats? _basicStats;
   PremiumStats? _premiumStats;
-  List<dynamic> _achievements = []; // UserAchievementResponse
+  List<dynamic> _achievements = [];
   List<UserList> _myLists = [];
 
   bool _loadingUser = true;
@@ -137,11 +138,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_user == null || _updatingVisibility) return;
     setState(() => _updatingVisibility = true);
     try {
-      await context.read<UserProvider>().getRaw(
-            'auth/profile-visibility',
-          );
-      // PUT endpoint: PUT /api/auth/profile-visibility {isPublic: bool}
-      // Using putRaw via base_provider
       await context.read<UserProvider>().putRaw(
             'auth/profile-visibility',
             {'isPublic': !_user!.isProfilePublic},
@@ -162,6 +158,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Sign Out',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text('Are you sure you want to sign out?',
+            style: TextStyle(color: AppColors.textMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign Out',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // Call backend logout if we have a refresh token
+    if (AuthProvider.refreshToken != null) {
+      try {
+        await context.read<UserProvider>().postRaw(
+          'auth/logout',
+          {'refreshToken': AuthProvider.refreshToken},
+        );
+      } catch (_) {
+        // Ignore errors — clear local state regardless
+      }
+    }
+
+    AuthProvider.clear();
+
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -178,6 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               SliverToBoxAdapter(child: _buildAchievementsSection()),
               SliverToBoxAdapter(child: _buildQuickLinks()),
               SliverToBoxAdapter(child: _buildListsSection()),
+              SliverToBoxAdapter(child: _buildLogoutSection()),
               const SliverToBoxAdapter(child: SizedBox(height: 32)),
             ],
           ),
@@ -392,7 +435,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _exportData() async {
-    // Prikazujemo loading indicator
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Row(
@@ -431,17 +473,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
       if (response.statusCode == 200) {
-        // Spremi JSON fajl lokalno
         final dir = await getApplicationDocumentsDirectory();
         final fileName =
-            'progressio_export_\${DateTime.now().millisecondsSinceEpoch}.json';
-        final file = File('\${dir.path}/\$fileName');
+            'progressio_export_${DateTime.now().millisecondsSinceEpoch}.json';
+        final file = File('${dir.path}/$fileName');
         await file.writeAsBytes(response.bodyBytes);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Export saved: \$fileName'),
+              content: Text('Export saved: $fileName'),
               backgroundColor: AppColors.success,
               action: SnackBarAction(
                 label: 'OK',
@@ -452,14 +493,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         }
       } else {
-        throw Exception('Server returned \${response.statusCode}');
+        throw Exception('Server returned ${response.statusCode}');
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Export failed: \$e'),
+          content: Text('Export failed: $e'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -483,7 +524,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           const _SectionTitle(title: 'Statistics'),
           const SizedBox(height: 14),
-          // KPI row
           Row(
             children: [
               Expanded(
@@ -506,7 +546,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
 
-          // Streak
           const SizedBox(height: 10),
           Row(
             children: [
@@ -525,7 +564,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
 
-          // Premium stats
           if (AuthProvider.isPremium && _premiumStats != null &&
               _showPremiumStats) ...[
             const SizedBox(height: 20),
@@ -774,6 +812,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── LOGOUT SECTION ───────────────────────────────────────────────────────────
+
+  Widget _buildLogoutSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xl, AppSpacing.lg, 0),
+      child: InkWell(
+        onTap: _logout,
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: AppDecorations.panel(borderColor: AppColors.error.withOpacity(0.3)),
+          child: Row(
+            children: [
+              Icon(Icons.logout_rounded, color: AppColors.error, size: 18),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Sign Out',
+                  style: TextStyle(
+                    color: AppColors.error,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded,
+                  color: AppColors.error.withOpacity(0.5), size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:progressio_mobile/model/notification_item.dart';
 import 'package:progressio_mobile/providers/notification_provider.dart';
+import 'package:progressio_mobile/providers/user_list_provider.dart';
 import 'package:progressio_mobile/screens/content_detail_screen.dart';
 import 'package:progressio_mobile/screens/user_profile_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
@@ -64,7 +65,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  /// Navigira na odgovarajući screen ovisno o tipu notifikacije i relatedEntityId.
   void _handleTap(NotificationItem item) {
     _markRead(item);
 
@@ -73,8 +73,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     final type = item.type.toLowerCase();
 
-    if (type == 'follow') {
-      // relatedEntityId je userId koji nas je pratio
+    if (type == 'listinvite') {
+      _showListInviteDialog(item, entityId);
+    } else if (type == 'follow') {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -84,8 +85,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     } else if (type == 'achievement') {
       // Achievement notifikacije nemaju specifičan entity screen — samo mark read
     } else {
-      // 'episode', 'comment', 'listinvite' i sve ostalo:
-      // relatedEntityId je contentId
+      // 'episode', 'comment' i ostalo: relatedEntityId je contentId
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -93,6 +93,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _showListInviteDialog(
+      NotificationItem item, int listId) async {
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _ListInviteSheet(
+        item: item,
+        listId: listId,
+        onDone: _load,
+      ),
+    );
   }
 
   @override
@@ -194,6 +210,152 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             'No notifications yet.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 15),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ListInviteSheet extends StatefulWidget {
+  final NotificationItem item;
+  final int listId;
+  final VoidCallback onDone;
+
+  const _ListInviteSheet({
+    required this.item,
+    required this.listId,
+    required this.onDone,
+  });
+
+  @override
+  State<_ListInviteSheet> createState() => _ListInviteSheetState();
+}
+
+class _ListInviteSheetState extends State<_ListInviteSheet> {
+  bool _loading = false;
+
+  Future<void> _accept() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      await context.read<UserListProvider>().acceptInvite(widget.listId);
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onDone();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pozivnica prihvaćena.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Greška: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _decline() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      await context.read<UserListProvider>().declineInvite(widget.listId);
+      if (!mounted) return;
+      Navigator.pop(context);
+      widget.onDone();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pozivnica odbijena.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Greška: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: AppColors.hairline,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Icon(Icons.list_alt_rounded, color: AppColors.success, size: 40),
+          const SizedBox(height: 14),
+          Text(
+            widget.item.title,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (widget.item.message.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              widget.item.message,
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          const SizedBox(height: 28),
+          if (_loading)
+            const CircularProgressIndicator(color: AppColors.primary)
+          else ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _accept,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.success,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Prihvati',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _decline,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.error,
+                  side: const BorderSide(color: AppColors.error),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Odbij',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Odustani',
+                    style: TextStyle(color: AppColors.textMuted)),
+              ),
+            ),
+          ],
         ],
       ),
     );

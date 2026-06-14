@@ -9,7 +9,7 @@ class SubscriptionProvider extends BaseProvider<Subscription> {
 
   Future<Subscription?> getMine() async {
     try {
-      final data = await getRaw('subscriptions/mine');
+      final data = await getRaw('subscriptions/me');
       return Subscription.fromJson(data);
     } catch (_) {
       return null;

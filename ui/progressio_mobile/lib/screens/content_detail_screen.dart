@@ -1,4 +1,4 @@
-// lib/screens/content_detail_screen.dart
+
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +19,7 @@ import 'package:progressio_mobile/providers/progress_provider.dart';
 import 'package:progressio_mobile/providers/review_provider.dart';
 import 'package:progressio_mobile/providers/season_provider.dart';
 import 'package:progressio_mobile/providers/vote_provider.dart';
+import 'package:progressio_mobile/screens/episode_comments_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/utils/utils.dart';
 import 'package:progressio_mobile/widgets/add_to_list_sheet.dart';
@@ -75,8 +76,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
   @override
   void initState() {
     super.initState();
-    // Inicijalizujemo s 3 taba — bit će reinicijalizovano nakon load-a
-    // kada se zna tip sadrzaja (_tabs.length moze biti 3 ili 4)
     _tabController = TabController(length: 3, vsync: this);
     _loadContent();
   }
@@ -87,8 +86,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
     super.dispose();
   }
 
-  /// Reinicijalizuje TabController na ispravan broj tabova nakon sto se
-  /// ucita sadrzaj i zna se tip (serija/knjiga/film).
   void _reinitTabController() {
     final newLength = _tabs.length;
     if (_tabController.length != newLength) {
@@ -113,7 +110,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
         _loadingContent = false;
       });
 
-      // Reinicijalizuj TabController sada kada znamo tip sadrzaja
       _reinitTabController();
 
       final t = content.contentTypeName?.toLowerCase() ?? '';
@@ -228,7 +224,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
     }
   }
 
-  /// Pokretanje pracenja — POST /api/progress/start
   Future<void> _startProgress() async {
     setState(() => _updatingStatus = true);
     try {
@@ -239,7 +234,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
         _progress = progress;
         _updatingStatus = false;
       });
-      // Voting za najdražeg lika (film, igrica, knjiga — ne serija)
       if (mounted && !_isSeriesType && _characters.isNotEmpty) {
         await showVoteDialog(
           context,
@@ -252,7 +246,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
     }
   }
 
-  /// Promjena statusa — PUT /api/progress/{progressId}/status
   Future<void> _changeStatus(String newStatus) async {
     final p = _progress;
     if (p == null) return;
@@ -265,7 +258,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
         _progress = updated;
         _updatingStatus = false;
       });
-      // Nakon Completed → glasaj za najdražeg lika (film/igrica/knjiga)
       if (mounted && newStatus == 'Completed' && !_isSeriesType && _characters.isNotEmpty) {
         await showVoteDialog(
           context,
@@ -471,7 +463,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                   const SizedBox(height: 12),
                   _buildStatusButtons(),
                   const SizedBox(height: 10),
-                  // Add to List
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -817,7 +808,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                   .read<ProgressProvider>()
                   .getForContent(widget.contentId);
               if (mounted) setState(() => _progress = updated);
-              // Glasanje za najdražeg lika u ovoj epizodi
               if (mounted && _characters.isNotEmpty) {
                 await showVoteDialog(
                   context,
@@ -827,6 +817,17 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                 );
               }
             }
+          },
+          onOpenComments: (episode) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => EpisodeCommentsScreen(
+                  episodeId: episode.id,
+                  episodeTitle: episode.title,
+                ),
+              ),
+            );
           },
         );
       },
@@ -892,7 +893,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                         .read<ProgressProvider>()
                         .getForContent(widget.contentId);
                     if (mounted) setState(() => _progress = updated);
-                    // Glasanje za najdražeg lika u ovom chapteru
                     if (mounted && _characters.isNotEmpty) {
                       await showVoteDialog(
                         context,
@@ -973,6 +973,7 @@ class _SeasonTile extends StatelessWidget {
   final VoidCallback onToggle;
   final int? progressId;
   final Future<void> Function(int episodeId) onMarkEpisode;
+  final void Function(Episode episode) onOpenComments;
 
   const _SeasonTile({
     required this.season,
@@ -981,6 +982,7 @@ class _SeasonTile extends StatelessWidget {
     required this.onToggle,
     required this.progressId,
     required this.onMarkEpisode,
+    required this.onOpenComments,
   });
 
   @override
@@ -1061,6 +1063,7 @@ class _SeasonTile extends StatelessWidget {
                             episode: e,
                             canMark: progressId != null,
                             onMark: () => onMarkEpisode(e.id),
+                            onOpenComments: () => onOpenComments(e),
                           ))
                       .toList(),
                 ),
@@ -1074,11 +1077,13 @@ class _EpisodeTile extends StatelessWidget {
   final Episode episode;
   final bool canMark;
   final VoidCallback onMark;
+  final VoidCallback onOpenComments;
 
   const _EpisodeTile({
     required this.episode,
     required this.canMark,
     required this.onMark,
+    required this.onOpenComments,
   });
 
   @override
@@ -1116,13 +1121,26 @@ class _EpisodeTile extends StatelessWidget {
           style:
               const TextStyle(color: AppColors.textFaint, fontSize: 11),
         ),
-        trailing: canMark
-            ? IconButton(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Comments button
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline_rounded,
+                  color: AppColors.textFaint, size: 18),
+              onPressed: onOpenComments,
+              tooltip: 'Comments',
+            ),
+            // Mark as watched button
+            if (canMark)
+              IconButton(
                 icon: const Icon(Icons.check_circle_outline,
                     color: AppColors.textFaint, size: 18),
                 onPressed: onMark,
-              )
-            : null,
+                tooltip: 'Mark as watched',
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1180,7 +1198,6 @@ class _CharacterCard extends StatelessWidget {
                   fontWeight: FontWeight.w600),
             ),
           ),
-          // Backend vraca isMainCharacter (bool), NE role (String)
           if (character.isMainCharacter) ...[
             const SizedBox(height: 4),
             Container(
@@ -1222,7 +1239,6 @@ class _ReviewCardState extends State<_ReviewCard> {
   @override
   Widget build(BuildContext context) {
     final r = widget.review;
-    // Backend vraca userFullName, ne username
     final displayName =
         r.userFullName.isNotEmpty ? r.userFullName : 'Anonymous';
     return Container(

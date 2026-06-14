@@ -8,7 +8,7 @@ class UserProvider extends BaseProvider<AppUser> {
   AppUser fromJson(dynamic json) => AppUser.fromJson(json);
 
   Future<AppUser> getMe() async {
-    final data = await getRaw('users/me');
+    final data = await getRaw('auth/me');
     return AppUser.fromJson(data);
   }
 

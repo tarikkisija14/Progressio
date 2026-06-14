@@ -9,6 +9,7 @@ import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
 import 'package:progressio_mobile/screens/wrapped_screen.dart';
+import 'package:progressio_mobile/screens/premium_screen.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -37,7 +38,7 @@ class _StatsScreenState extends State<StatsScreen> {
       if (mounted) setState(() {
         _basic = basic;
         _loadingBasic = false;
-        _isPremium = AuthProvider.isPremium ?? false;
+        _isPremium = AuthProvider.isPremium;
       });
       if (_isPremium) _loadPremium();
     } catch (_) {
@@ -452,7 +453,18 @@ class _StatsScreenState extends State<StatsScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {},
+                onPressed: () async {
+                  final result = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(builder: (_) => const PremiumScreen()),
+                  );
+                  if (result == true && mounted) {
+                    setState(() {
+                      _isPremium = AuthProvider.isPremium;
+                      _loadingBasic = true;
+                    });
+                    _load();
+                  }
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.black,
