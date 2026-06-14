@@ -13,6 +13,6 @@ class NotificationProvider extends BaseProvider<NotificationItem> {
   }
 
   Future<void> markRead(int id) async {
-    await postRaw('notifications/$id/read', {});
+    await putRaw('notifications/$id/read', {});
   }
 }
