@@ -34,24 +34,18 @@ namespace Progressio.Worker.Consumers
 
         public override async Task StartAsync(CancellationToken cancellationToken)
         {
-            var factory = new ConnectionFactory
-            {
-                HostName = _configuration["RabbitMq:Host"] ?? "localhost",
-                UserName = _configuration["RabbitMq:Username"] ?? "guest",
-                Password = _configuration["RabbitMq:Password"] ?? "guest",
-                Port = int.Parse(_configuration["RabbitMq:Port"] ?? "5672")
-            };
+            (_connection, _channel) = await RabbitMqConnectionHelper.CreateAsync(
+     _configuration,
+     _logger,
+     cancellationToken);
 
-            _connection = await factory.CreateConnectionAsync(cancellationToken);
-            _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
-           
             await _channel.QueueDeclareAsync(
                 queue: DeadLetterQueue, durable: true, exclusive: false,
                 autoDelete: false, arguments: null,
                 cancellationToken: cancellationToken);
 
-            
+
             var mainArgs = new Dictionary<string, object?>
             {
                 ["x-dead-letter-exchange"] = "",
@@ -63,11 +57,8 @@ namespace Progressio.Worker.Consumers
                 autoDelete: false, arguments: mainArgs,
                 cancellationToken: cancellationToken);
 
-           
-            await _channel.QueueDeclareAsync(
-                queue: NotificationQueue, durable: true, exclusive: false,
-                autoDelete: false, arguments: null,
-                cancellationToken: cancellationToken);
+            // send_notification queue je deklarisan u NotificationConsumer-u sa DLX argumentima.
+            // Ovdje ga ne deklarišemo ponovo kako bi se izbjegao PRECONDITION_FAILED konflikt.
 
             await _channel.BasicQosAsync(0, 1, false, cancellationToken);
 

@@ -1,0 +1,74 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: progressio_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_USER}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASS}"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Progressio.WebApi/Dockerfile
+    container_name: progressio_api
+    ports:
+      - "5000:8080"
+    environment:
+      ConnectionStrings__Default: "Server=host.docker.internal,1433;Database=${DB_NAME};User Id=sa;Password=${DB_PASSWORD};MultipleActiveResultSets=true;TrustServerCertificate=True"
+      Jwt__Key: "${JWT_KEY}"
+      Jwt__Issuer: "Progressio"
+      Jwt__Audience: "ProgressioApp"
+      RabbitMq__Host: "rabbitmq"
+      RabbitMq__Username: "${RABBITMQ_USER}"
+      RabbitMq__Password: "${RABBITMQ_PASS}"
+      RabbitMq__Port: "5672"
+      Stripe__PublishableKey: "${STRIPE_PUBLISHABLE_KEY}"
+      Stripe__SecretKey: "${STRIPE_SECRET_KEY}"
+      Stripe__WebhookSecret: "${STRIPE_WEBHOOK_SECRET}"
+      Api__InternalKey: "${INTERNAL_KEY}"
+      Stats__AvgMinutesPerChapter: "6.0"
+      Stats__AvgHoursPerGame: "20.0"
+      ASPNETCORE_ENVIRONMENT: "Production"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - dataprotection_keys:/root/.aspnet/DataProtection-Keys
+
+  worker:
+    build:
+      context: .
+      dockerfile: Progressio.Worker/Dockerfile
+    container_name: progressio_worker
+    environment:
+      ConnectionStrings__Default: "Server=host.docker.internal,1433;Database=${DB_NAME};User Id=sa;Password=${DB_PASSWORD};MultipleActiveResultSets=true;TrustServerCertificate=True"
+      RabbitMq__Host: "rabbitmq"
+      RabbitMq__Username: "${RABBITMQ_USER}"
+      RabbitMq__Password: "${RABBITMQ_PASS}"
+      RabbitMq__Port: "5672"
+      Api__BaseUrl: "http://api:8080/"
+      Api__InternalKey: "${INTERNAL_KEY}"
+      Smtp__Host: "${SMTP_HOST}"
+      Smtp__Port: "${SMTP_PORT}"
+      Smtp__Username: "${SMTP_USERNAME}"
+      Smtp__Password: "${SMTP_PASSWORD}"
+      Smtp__FromEmail: "${SMTP_FROM_EMAIL}"
+      Smtp__FromName: "Progressio"
+      DOTNET_ENVIRONMENT: "Production"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbitmq_data:
+  dataprotection_keys:

@@ -6,7 +6,6 @@ using System.Text.Json;
 
 namespace Progressio.Services.Messaging
 {
-   
     public class RabbitMqPublisher : IRabbitMqPublisher, IAsyncDisposable
     {
         private readonly IConfiguration _configuration;
@@ -56,19 +55,14 @@ namespace Progressio.Services.Messaging
         {
             await EnsureInitializedAsync();
 
-            await _channel!.QueueDeclareAsync(
-                queue: queueName,
-                durable: true,
-                exclusive: false,
-                autoDelete: false,
-                arguments: null);
-
+            // ISPRAVKA: Ne deklarisemo queue ovdje jer bi konfliktovaio sa DLX argumentima
+            // koje konsumeri vec postavljaju. Publishujemo direktno na postojeci queue.
             var json = JsonSerializer.Serialize(message);
             var body = Encoding.UTF8.GetBytes(json);
 
             var props = new BasicProperties { Persistent = true };
 
-            await _channel.BasicPublishAsync(
+            await _channel!.BasicPublishAsync(
                 exchange: "",
                 routingKey: queueName,
                 mandatory: false,
@@ -78,7 +72,6 @@ namespace Progressio.Services.Messaging
             _logger.LogInformation("Published message to queue '{Queue}': {Message}", queueName, json);
         }
 
-        
         public void Publish<T>(string queueName, T message)
         {
             _ = Task.Run(async () =>

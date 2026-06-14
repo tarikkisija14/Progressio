@@ -2,6 +2,7 @@
 using Progressio.Model.Enums;
 using Progressio.Model.Messages;
 using Progressio.Services.Database;
+using Progressio.Worker.Consumers;
 using RabbitMQ.Client;
 using System.Text;
 using System.Text.Json;
@@ -32,26 +33,14 @@ public class EpisodeAiredJob : BackgroundService
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        var factory = new ConnectionFactory
-        {
-            HostName = _configuration["RabbitMq:Host"] ?? "localhost",
-            UserName = _configuration["RabbitMq:Username"] ?? "guest",
-            Password = _configuration["RabbitMq:Password"] ?? "guest",
-            Port = int.Parse(_configuration["RabbitMq:Port"] ?? "5672")
-        };
+        // Koristimo shared helper sa retry logikom umjesto direktne konekcije
+        (_connection, _channel) = await RabbitMqConnectionHelper.CreateAsync(
+            _configuration,
+            _logger,
+            cancellationToken);
 
-        _connection = await factory.CreateConnectionAsync(cancellationToken);
-        _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
-
-        await _channel.QueueDeclareAsync(
-            queue: NotificationQueue, durable: true, exclusive: false,
-            autoDelete: false, arguments: null,
-            cancellationToken: cancellationToken);
-
-        await _channel.QueueDeclareAsync(
-            queue: EmailQueue, durable: true, exclusive: false,
-            autoDelete: false, arguments: null,
-            cancellationToken: cancellationToken);
+        // Queue-ovi su vec deklarisani sa ispravnim argumentima od strane EmailConsumer i NotificationConsumer.
+        // EpisodeAiredJob samo publishuje poruke, ne deklariše queue-ove.
 
         await base.StartAsync(cancellationToken);
     }
@@ -61,9 +50,8 @@ public class EpisodeAiredJob : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             var now = DateTime.UtcNow;
-            var nextRun = now.Date.AddDays(1).AddHours(8); 
+            var nextRun = now.Date.AddDays(1).AddHours(8);
 
-          
             var todayAt8 = now.Date.AddHours(8);
             if (now < todayAt8)
                 nextRun = todayAt8;
@@ -100,14 +88,12 @@ public class EpisodeAiredJob : BackgroundService
             var today = DateTime.UtcNow.Date;
             var tomorrow = today.AddDays(1);
 
-           
             var airingEpisodes = await db.Episodes
                 .Include(e => e.Season)
                     .ThenInclude(s => s.Content)
                 .Where(e => e.AirDate >= today && e.AirDate < tomorrow)
                 .ToListAsync(ct);
 
-           
             var releasingChapters = await db.Chapters
                 .Include(c => c.Content)
                 .Where(c => c.ReleaseDate.HasValue
@@ -117,13 +103,11 @@ public class EpisodeAiredJob : BackgroundService
             _logger.LogInformation("EpisodeAiredJob: Found {EpisodeCount} episodes and {ChapterCount} chapters airing today",
                 airingEpisodes.Count, releasingChapters.Count);
 
-           
             foreach (var episode in airingEpisodes)
             {
                 var contentId = episode.Season.ContentId;
                 var contentTitle = episode.Season.Content.Title;
 
-               
                 var watchingUserIds = await db.UserContentProgresses
                     .Where(p => p.ContentId == contentId && p.Status == ProgressStatus.InProgress)
                     .Select(p => p.UserId)
@@ -131,7 +115,6 @@ public class EpisodeAiredJob : BackgroundService
 
                 foreach (var userId in watchingUserIds)
                 {
-                  
                     var user = await db.Users.FindAsync(new object[] { userId }, ct);
 
                     var notificationMsg = new SendNotificationMessage
@@ -145,7 +128,6 @@ public class EpisodeAiredJob : BackgroundService
 
                     await PublishMessageAsync(NotificationQueue, notificationMsg, ct);
 
-                   
                     if (user is not null && !string.IsNullOrEmpty(user.Email))
                     {
                         var emailMsg = new SendEmailMessage
@@ -164,7 +146,6 @@ public class EpisodeAiredJob : BackgroundService
                     watchingUserIds.Count, episode.Id, contentTitle);
             }
 
-           
             foreach (var chapter in releasingChapters)
             {
                 var contentId = chapter.ContentId;

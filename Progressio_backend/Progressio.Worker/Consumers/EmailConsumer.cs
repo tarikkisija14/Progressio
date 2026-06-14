@@ -31,16 +31,10 @@ public class EmailConsumer : BackgroundService
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        var factory = new ConnectionFactory
-        {
-            HostName = _configuration["RabbitMq:Host"] ?? "localhost",
-            UserName = _configuration["RabbitMq:Username"] ?? "guest",
-            Password = _configuration["RabbitMq:Password"] ?? "guest",
-            Port = int.Parse(_configuration["RabbitMq:Port"] ?? "5672")
-        };
-
-        _connection = await factory.CreateConnectionAsync(cancellationToken);
-        _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
+        (_connection, _channel) = await RabbitMqConnectionHelper.CreateAsync(
+    _configuration,
+    _logger,
+    cancellationToken);
 
         await _channel.QueueDeclareAsync(
             queue: DeadLetterQueue, durable: true, exclusive: false,

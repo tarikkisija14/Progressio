@@ -29,24 +29,17 @@ namespace Progressio.Worker.Consumers
 
         public override async Task StartAsync(CancellationToken cancellationToken)
         {
-            var factory = new ConnectionFactory
-            {
-                HostName = _configuration["RabbitMq:Host"] ?? "localhost",
-                UserName = _configuration["RabbitMq:Username"] ?? "guest",
-                Password = _configuration["RabbitMq:Password"] ?? "guest",
-                Port = int.Parse(_configuration["RabbitMq:Port"] ?? "5672")
-            };
+            (_connection, _channel) = await RabbitMqConnectionHelper.CreateAsync(
+     _configuration,
+     _logger,
+     cancellationToken);
 
-            _connection = await factory.CreateConnectionAsync(cancellationToken);
-            _channel = await _connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
-            // Dead-letter queue
             await _channel.QueueDeclareAsync(
                 queue: DeadLetterQueue, durable: true, exclusive: false,
                 autoDelete: false, arguments: null,
                 cancellationToken: cancellationToken);
 
-            // Main queue with x-dead-letter-exchange
             var mainArgs = new Dictionary<string, object?>
             {
                 ["x-dead-letter-exchange"] = "",
@@ -54,9 +47,14 @@ namespace Progressio.Worker.Consumers
             };
 
             await _channel.QueueDeclareAsync(
-                queue: QueueName, durable: true, exclusive: false,
-                autoDelete: false, arguments: mainArgs,
+                queue: QueueName,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: mainArgs,
                 cancellationToken: cancellationToken);
+
+
 
             await _channel.BasicQosAsync(0, 1, false, cancellationToken);
 
@@ -144,14 +142,14 @@ namespace Progressio.Worker.Consumers
             var apiBaseUrl = _configuration["Api:BaseUrl"];
             if (string.IsNullOrWhiteSpace(apiBaseUrl))
             {
-                _logger.LogWarning("Api:BaseUrl is not configured — SignalR push skipped for User {UserId}", message.UserId);
+                _logger.LogWarning("Api:BaseUrl is not configured � SignalR push skipped for User {UserId}", message.UserId);
                 return;
             }
 
             var internalKey = _configuration["Api:InternalKey"];
             if (string.IsNullOrWhiteSpace(internalKey))
             {
-                _logger.LogWarning("Api:InternalKey is not configured — SignalR push skipped for User {UserId}", message.UserId);
+                _logger.LogWarning("Api:InternalKey is not configured � SignalR push skipped for User {UserId}", message.UserId);
                 return;
             }
 
@@ -187,7 +185,7 @@ namespace Progressio.Worker.Consumers
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to call internal notify endpoint for User {UserId} — notification was already saved to DB", message.UserId);
+                _logger.LogWarning(ex, "Failed to call internal notify endpoint for User {UserId} � notification was already saved to DB", message.UserId);
             }
         }
 

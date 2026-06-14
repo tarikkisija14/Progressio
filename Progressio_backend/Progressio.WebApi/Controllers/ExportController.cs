@@ -1,12 +1,13 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Progressio.Model.Exceptions;
 using Progressio.Services.Services;
 using System.Security.Claims;
 
 namespace Progressio.WebApi.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
+    [Authorize]
     public class ExportController : ControllerBase
     {
         private readonly IExportService _exportService;
@@ -16,8 +17,13 @@ namespace Progressio.WebApi.Controllers
             _exportService = exportService;
         }
 
-        private int GetUserId() =>
-        int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 1;
+        private int GetUserId()
+        {
+            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(value, out var id) || id <= 0)
+                throw new UnauthorizedException("JWT token does not contain a valid user identifier.");
+            return id;
+        }
 
         [HttpGet("api/export/me")]
         public async Task<IActionResult> ExportMyData([FromQuery] string format = "json")

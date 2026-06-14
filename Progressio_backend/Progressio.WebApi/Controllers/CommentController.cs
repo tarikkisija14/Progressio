@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Progressio.Model.Exceptions;
 using Progressio.Model.Requests.CommentRequests;
 using Progressio.Model.Responses.CommentResponses;
 using Progressio.Model.SearchObjects;
@@ -9,7 +10,6 @@ using System.Security.Claims;
 namespace Progressio.WebApi.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
     public class CommentController : ControllerBase
     {
         private readonly ICommentService _commentService;
@@ -19,20 +19,31 @@ namespace Progressio.WebApi.Controllers
             _commentService = commentService;
         }
 
-        private int GetUserId() =>
-            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
+        private int GetUserId()
+        {
+            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(value, out var id) || id <= 0)
+                throw new UnauthorizedException("JWT token does not contain a valid user identifier.");
+            return id;
+        }
+
+        private int? TryGetUserId()
+        {
+            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return int.TryParse(value, out var id) && id > 0 ? id : null;
+        }
 
         private bool IsAdmin() =>
             User.IsInRole(AppRoles.Admin);
 
         [HttpGet("api/episodes/{id:int}/comments")]
+        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<CommentResponse>>> GetByEpisode(
             int id,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] bool hideSpoilers = false)
         {
-            var userId = GetUserId();
             var searchObject = new CommentSearchObject
             {
                 EpisodeId = id,
@@ -41,18 +52,18 @@ namespace Progressio.WebApi.Controllers
                 HideSpoilers = hideSpoilers
             };
 
-            var result = await _commentService.GetCommentsAsync(searchObject, userId > 0 ? userId : null);
+            var result = await _commentService.GetCommentsAsync(searchObject, TryGetUserId());
             return Ok(result);
         }
 
         [HttpGet("api/chapters/{id:int}/comments")]
+        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<CommentResponse>>> GetByChapter(
             int id,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] bool hideSpoilers = false)
         {
-            var userId = GetUserId();
             var searchObject = new CommentSearchObject
             {
                 ChapterId = id,
@@ -61,11 +72,12 @@ namespace Progressio.WebApi.Controllers
                 HideSpoilers = hideSpoilers
             };
 
-            var result = await _commentService.GetCommentsAsync(searchObject, userId > 0 ? userId : null);
+            var result = await _commentService.GetCommentsAsync(searchObject, TryGetUserId());
             return Ok(result);
         }
 
         [HttpGet("api/content/{id:int}/comments")]
+        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<CommentResponse>>> GetByContent(
             int id,
             [FromQuery] int page = 1,
@@ -74,7 +86,6 @@ namespace Progressio.WebApi.Controllers
             [FromQuery] bool? hasSpoiler = null,
             [FromQuery] bool? isVisible = null)
         {
-            var userId = GetUserId();
             var admin = IsAdmin();
 
             var searchObject = new CommentSearchObject
@@ -83,17 +94,17 @@ namespace Progressio.WebApi.Controllers
                 Page = page,
                 PageSize = pageSize,
                 HideSpoilers = hideSpoilers,
-                // Filteri za HasSpoiler i IsVisible prihvatamo samo od admina
                 HasSpoiler = admin ? hasSpoiler : null,
                 IsVisible = admin ? isVisible : null,
                 IncludeHidden = admin && isVisible.HasValue
             };
 
-            var result = await _commentService.GetCommentsAsync(searchObject, userId > 0 ? userId : null);
+            var result = await _commentService.GetCommentsAsync(searchObject, TryGetUserId());
             return Ok(result);
         }
 
         [HttpPost("api/episodes/{id:int}/comments")]
+        [Authorize]
         public async Task<ActionResult<CommentResponse>> AddEpisodeComment(
             int id,
             [FromBody] CommentInsertRequest request)
@@ -104,6 +115,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPost("api/chapters/{id:int}/comments")]
+        [Authorize]
         public async Task<ActionResult<CommentResponse>> AddChapterComment(
             int id,
             [FromBody] CommentInsertRequest request)
@@ -114,6 +126,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPost("api/content/{id:int}/comments")]
+        [Authorize]
         public async Task<ActionResult<CommentResponse>> AddContentComment(
             int id,
             [FromBody] CommentInsertRequest request)
@@ -124,6 +137,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPut("api/comments/{id:int}")]
+        [Authorize]
         public async Task<ActionResult<CommentResponse>> Update(
             int id,
             [FromBody] CommentUpdateRequest request)
@@ -133,6 +147,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPost("api/comments/{id:int}/like")]
+        [Authorize]
         public async Task<IActionResult> ToggleLike(int id)
         {
             await _commentService.ToggleLikeAsync(GetUserId(), id);
@@ -140,6 +155,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpDelete("api/comments/{id:int}")]
+        [Authorize]
         public async Task<IActionResult> Delete(int id)
         {
             await _commentService.DeleteCommentAsync(GetUserId(), id, IsAdmin());

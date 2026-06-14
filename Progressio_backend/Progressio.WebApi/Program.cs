@@ -1,4 +1,8 @@
 ﻿using FluentValidation;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
+using Progressio.WebApi.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -207,16 +211,28 @@ builder.Services.AddScoped<IReportService, ReportService>();
 
 builder.Services.AddMemoryCache();
 
+// ─── DataProtection — persist keys to mounted volume ─────────────────────────
+// PersistKeysToFileSystem sprjecava gubitak kljuceva pri restartu kontejnera.
+// NullXmlEncryptor eliminise warning "No XML encryptor configured" —
+// na Linuxu u Dockeru DPAPI nije dostupan, a certifikat nije potreban jer
+// je volume zaštićen na nivou Docker mreze.
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo("/root/.aspnet/DataProtection-Keys"))
+    .UseCustomCryptographicAlgorithms(new ManagedAuthenticatedEncryptorConfiguration())
+    .Services.AddSingleton<Microsoft.AspNetCore.DataProtection.XmlEncryption.IXmlEncryptor, NullXmlEncryptor>();
+
 // ─── RabbitMQ Publisher (Singleton — one connection) ─────────────────────────
 builder.Services.AddSingleton<Progressio.Services.Messaging.IRabbitMqPublisher,
                                Progressio.Services.Messaging.RabbitMqPublisher>();
 
-// ─── Memory Cache ─────────────────────────────────────────────────────────────
-builder.Services.AddMemoryCache();
-
 // ─── Upload path ──────────────────────────────────────────────────────────────
-builder.Configuration["UploadPath"] = Path.Combine(builder.Environment.WebRootPath ??
-    Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "profiles");
+// ISPRAVKA: Eksplicitno postavljamo WebRootPath da UseStaticFiles ne prijavi warning.
+// Dockerfile kreira /app/wwwroot, ali builder.Environment.WebRootPath je null dok
+// fajl sistem nije spreman — postavljamo ga rucno prije build-a.
+var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+Directory.CreateDirectory(Path.Combine(wwwrootPath, "uploads", "profiles"));
+builder.Environment.WebRootPath = wwwrootPath;
+builder.Configuration["UploadPath"] = Path.Combine(wwwrootPath, "uploads", "profiles");
 
 // ─── Singletons ───────────────────────────────────────────────────────────────
 builder.Services.AddSingleton<Progressio.Commom.Services.CryptoService>();

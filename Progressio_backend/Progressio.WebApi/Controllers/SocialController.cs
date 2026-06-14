@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Progressio.Model.Exceptions;
 using Progressio.Model.Responses.SocialResponses;
 using Progressio.Model.SearchObjects;
 using Progressio.Services.Services;
@@ -8,7 +9,6 @@ using System.Security.Claims;
 namespace Progressio.WebApi.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
     public class SocialController : ControllerBase
     {
         private readonly IFollowService _followService;
@@ -22,10 +22,22 @@ namespace Progressio.WebApi.Controllers
             _feedService = feedService;
         }
 
-        private int GetUserId() =>
-            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 1;
+        private int GetUserId()
+        {
+            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(value, out var id) || id <= 0)
+                throw new UnauthorizedException("JWT token does not contain a valid user identifier.");
+            return id;
+        }
+
+        private int? TryGetUserId()
+        {
+            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return int.TryParse(value, out var id) && id > 0 ? id : null;
+        }
 
         [HttpPost("api/users/{id:int}/follow")]
+        [Authorize]
         public async Task<IActionResult> Follow(int id)
         {
             await _followService.FollowAsync(GetUserId(), id);
@@ -33,6 +45,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpDelete("api/users/{id:int}/follow")]
+        [Authorize]
         public async Task<IActionResult> Unfollow(int id)
         {
             await _followService.UnfollowAsync(GetUserId(), id);
@@ -40,6 +53,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpGet("api/users/{id:int}/followers")]
+        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<FollowerResponse>>> GetFollowers(
             int id,
             [FromQuery] int page = 1,
@@ -57,6 +71,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpGet("api/users/{id:int}/following")]
+        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<FollowerResponse>>> GetFollowing(
             int id,
             [FromQuery] int page = 1,
@@ -74,14 +89,16 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpGet("api/users/{id:int}/profile")]
+        [AllowAnonymous]
         public async Task<ActionResult<UserProfileResponse>> GetUserProfile(int id)
         {
-            var currentUserId = GetUserId();
-            var result = await _followService.GetUserProfileAsync(id, currentUserId > 0 ? currentUserId : null);
+            var currentUserId = TryGetUserId();
+            var result = await _followService.GetUserProfileAsync(id, currentUserId);
             return Ok(result);
         }
 
         [HttpGet("api/feed")]
+        [Authorize]
         public async Task<ActionResult<PagedResult<FeedItemResponse>>> GetFeed(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
