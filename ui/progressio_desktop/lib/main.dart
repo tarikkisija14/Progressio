@@ -25,7 +25,7 @@ import 'package:progressio_desktop/providers/city_provider.dart';
 import 'package:progressio_desktop/providers/platform_provider.dart';
 import 'package:progressio_desktop/providers/report_provider.dart';
 import 'package:progressio_desktop/providers/admin_dashboard_provider.dart';
-
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 void main() {
   runApp(
@@ -49,10 +49,6 @@ void main() {
         ChangeNotifierProvider(create: (_) => PlatformProvider()),
         ChangeNotifierProvider(create: (_) => ReportProvider()),
         ChangeNotifierProvider(create: (_) => AdminDashboardProvider()),
-
-
-
-
       ],
       child: const ProgressioAdminApp(),
     ),
@@ -71,6 +67,7 @@ class ProgressioAdminApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: AppColors.background,
+        visualDensity: VisualDensity.standard,
         colorScheme: const ColorScheme.dark(
           primary: AppColors.primary,
           secondary: AppColors.secondary,
@@ -84,12 +81,12 @@ class ProgressioAdminApp extends StatelessWidget {
           headlineLarge: TextStyle(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.w800,
-            letterSpacing: -0.4,
+            letterSpacing: 0,
           ),
           headlineMedium: TextStyle(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
+            letterSpacing: 0,
           ),
           titleLarge: TextStyle(
             color: AppColors.textPrimary,
@@ -112,7 +109,7 @@ class ProgressioAdminApp extends StatelessWidget {
             color: AppColors.textPrimary,
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            letterSpacing: -0.2,
+            letterSpacing: 0,
           ),
         ),
         drawerTheme: const DrawerThemeData(
@@ -125,7 +122,7 @@ class ProgressioAdminApp extends StatelessWidget {
           surfaceTintColor: Colors.transparent,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(AppRadii.xl),
             side: const BorderSide(color: AppColors.border),
           ),
         ),
@@ -133,7 +130,7 @@ class ProgressioAdminApp extends StatelessWidget {
           backgroundColor: AppColors.surfaceElevated,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(AppRadii.xl),
             side: const BorderSide(color: AppColors.border),
           ),
           titleTextStyle: const TextStyle(
@@ -149,25 +146,26 @@ class ProgressioAdminApp extends StatelessWidget {
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: AppColors.input,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadii.md),
             borderSide: const BorderSide(color: AppColors.border),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadii.md),
             borderSide: const BorderSide(color: AppColors.border),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadii.md),
             borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
           ),
           errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadii.md),
             borderSide: const BorderSide(color: AppColors.error),
           ),
           focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppRadii.md),
             borderSide: const BorderSide(color: AppColors.error, width: 1.5),
           ),
           labelStyle: const TextStyle(color: AppColors.textSecondary),
@@ -183,14 +181,14 @@ class ProgressioAdminApp extends StatelessWidget {
             disabledForegroundColor: AppColors.textMuted,
             elevation: 0,
             shadowColor: Colors.transparent,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 17),
             textStyle: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              letterSpacing: 0.1,
+              letterSpacing: 0,
             ),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppRadii.md),
             ),
           ),
         ),
@@ -198,9 +196,9 @@ class ProgressioAdminApp extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.textPrimary,
             side: const BorderSide(color: AppColors.border),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 17),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppRadii.md),
             ),
           ),
         ),
@@ -215,7 +213,7 @@ class ProgressioAdminApp extends StatelessWidget {
             foregroundColor: AppColors.textSecondary,
             hoverColor: AppColors.primarySoft,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
             ),
           ),
         ),
@@ -224,33 +222,44 @@ class ProgressioAdminApp extends StatelessWidget {
             color: AppColors.textPrimary,
             fontWeight: FontWeight.w700,
             fontSize: 13,
-            letterSpacing: 0.2,
+            letterSpacing: 0,
           ),
           dataTextStyle: const TextStyle(
             color: AppColors.textSecondary,
             fontSize: 13,
           ),
-          headingRowColor: const WidgetStatePropertyAll(AppColors.surfaceElevated),
-          dataRowColor: const WidgetStatePropertyAll(AppColors.surface),
+          headingRowColor:
+              const WidgetStatePropertyAll(AppColors.surfaceElevated),
+          dataRowColor: const WidgetStatePropertyAll(AppColors.card),
           dividerThickness: 1,
+          horizontalMargin: 18,
+          columnSpacing: 28,
+          headingRowHeight: 52,
+          dataRowMinHeight: 58,
+          dataRowMaxHeight: 68,
           decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(18),
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(AppRadii.lg),
             border: Border.all(color: AppColors.border),
+            boxShadow: AppShadows.soft,
           ),
         ),
         snackBarTheme: SnackBarThemeData(
           backgroundColor: AppColors.surfaceElevated,
           contentTextStyle: const TextStyle(color: AppColors.textPrimary),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+            side: const BorderSide(color: AppColors.border),
+          ),
         ),
         dropdownMenuTheme: DropdownMenuThemeData(
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
             fillColor: AppColors.input,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppRadii.md),
               borderSide: const BorderSide(color: AppColors.border),
             ),
           ),
@@ -293,7 +302,6 @@ class _LoginScreenState extends State<LoginScreen> {
   static const String _baseUrl = String.fromEnvironment(
     'baseUrl',
     defaultValue: 'https://localhost:7204/api/',
-
   );
 
   @override
@@ -303,214 +311,198 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  
-Future<void> _login() async {
-  setState(() {
-    _loading = true;
-    _error = null;
-  });
+  Future<void> _login() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
-  try {
-    final uri = Uri.parse('${_baseUrl}auth/login');
-    debugPrint('Calling: $uri');
+    try {
+      final uri = Uri.parse('${_baseUrl}auth/login');
+      debugPrint('Calling: $uri');
 
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'username': _usernameController.text.trim(),
-        'password': _passwordController.text,
-      }),
-    );
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'username': _usernameController.text.trim(),
+          'password': _passwordController.text,
+        }),
+      );
 
-    debugPrint('Status: ${response.statusCode}');
-    debugPrint('Body: ${response.body}');
+      debugPrint('Status: ${response.statusCode}');
+      debugPrint('Body: ${response.body}');
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      AuthProvider.token = data['accessToken'];
-      AuthProvider.username = _usernameController.text.trim();
-      AuthProvider.password = _passwordController.text;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        AuthProvider.token = data['accessToken'];
+        AuthProvider.username = _usernameController.text.trim();
+        AuthProvider.password = _passwordController.text;
 
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const ContentListScreen()),
-        );
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const ContentListScreen()),
+          );
+        }
+      } else {
+        setState(() => _error =
+            'Invalid username or password. Status: ${response.statusCode}');
       }
-    } else {
-      setState(() => _error = 'Invalid username or password. Status: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('Error: $e');
+      setState(() => _error = 'Error: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-  } catch (e) {
-    debugPrint('Error: $e');
-    setState(() => _error = 'Error: $e');
-  } finally {
-    if (mounted) setState(() => _loading = false);
   }
-}
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.topRight,
-            radius: 1.15,
-            colors: [
-              Color(0x33FF7A00),
-              AppColors.background,
-              AppColors.background,
-            ],
-          ),
-        ),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 440),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withOpacity(0.12),
-                    blurRadius: 60,
-                    offset: const Offset(0, 24),
-                  ),
-                ],
+      body: AppShellBackground(
+        child: Stack(
+          children: [
+            Positioned(
+              left: -120,
+              bottom: -160,
+              child: Container(
+                width: 360,
+                height: 360,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.hairline),
+                ),
               ),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(34),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.center,
-                        child: Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [AppColors.primaryHover, AppColors.primary],
+            ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(AppSpacing.xxl),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: Container(
+                    decoration: AppDecorations.panel(
+                      color: AppColors.surfaceSoft,
+                      radius: 28,
+                      borderColor: AppColors.borderStrong,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(36),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Align(
+                            alignment: Alignment.center,
+                            child: AppBrandMark(size: 66, iconSize: 38),
+                          ),
+                          const SizedBox(height: 24),
+                          const Text(
+                            'Progressio Admin',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 29,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0,
                             ),
-                            borderRadius: BorderRadius.circular(18),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.35),
-                                blurRadius: 28,
-                                offset: const Offset(0, 12),
-                              ),
-                            ],
                           ),
-                          child: const Icon(
-                            Icons.play_circle_filled,
-                            color: Colors.black,
-                            size: 36,
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Sign in to manage content, users and analytics.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 14,
+                              height: 1.45,
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      const Text(
-                        'Progressio Admin',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Sign in to manage content, users and analytics.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      TextField(
-                        controller: _usernameController,
-                        style: const TextStyle(color: AppColors.textPrimary),
-                        decoration: const InputDecoration(
-                          labelText: 'Username',
-                          prefixIcon: Icon(Icons.person_outline),
-                        ),
-                        onSubmitted: (_) => _login(),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: true,
-                        style: const TextStyle(color: AppColors.textPrimary),
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: Icon(Icons.lock_outline),
-                        ),
-                        onSubmitted: (_) => _login(),
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.error.withOpacity(0.55)),
+                          const SizedBox(height: 34),
+                          TextField(
+                            controller: _usernameController,
+                            style:
+                                const TextStyle(color: AppColors.textPrimary),
+                            decoration: const InputDecoration(
+                              labelText: 'Username',
+                              prefixIcon: Icon(Icons.person_outline_rounded),
+                            ),
+                            onSubmitted: (_) => _login(),
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Icon(
-                                Icons.error_outline,
-                                color: AppColors.error,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _error!,
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 12,
-                                    height: 1.35,
-                                  ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _passwordController,
+                            obscureText: true,
+                            style:
+                                const TextStyle(color: AppColors.textPrimary),
+                            decoration: const InputDecoration(
+                              labelText: 'Password',
+                              prefixIcon: Icon(Icons.lock_outline_rounded),
+                            ),
+                            onSubmitted: (_) => _login(),
+                          ),
+                          if (_error != null) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.error.withValues(alpha: 0.10),
+                                borderRadius:
+                                    BorderRadius.circular(AppRadii.md),
+                                border: Border.all(
+                                  color:
+                                      AppColors.error.withValues(alpha: 0.55),
                                 ),
                               ),
-                            ],
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(
+                                    Icons.error_outline_rounded,
+                                    color: AppColors.error,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _error!,
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 12,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: _loading ? null : _login,
+                              child: _loading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('Sign In'),
+                            ),
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _loading ? null : _login,
-                          child: _loading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('Sign In'),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
-
 }

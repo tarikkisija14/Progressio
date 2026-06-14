@@ -1,19 +1,14 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Progressio.Model.Enums;
+using Progressio.Model.Exceptions;
 using Progressio.Model.Responses.CalendarResponses;
 using Progressio.Model.SearchObjects;
 using Progressio.Services.Database;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Progressio.Services.Services
 {
     public class CalendarService : ICalendarService
-
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<CalendarService> _logger;
@@ -26,9 +21,13 @@ namespace Progressio.Services.Services
 
         public async Task<PagedResult<CalendarItemResponse>> GetUpcomingAsync(int userId, CalendarSearchObject search)
         {
-            var days = search.Days < 1 ? 1 : search.Days > 365 ? 365 : search.Days;
+            if (search.Days < 1 || search.Days > 365)
+            {
+                throw new BusinessException("Days must be between 1 and 365.");
+            }
+
             var now = DateTime.UtcNow.Date;
-            var until = now.AddDays(days);
+            var until = now.AddDays(search.Days);
 
             var inProgressContentIds = await _db.UserContentProgresses
                 .Where(p => p.UserId == userId && p.Status == ProgressStatus.InProgress)
@@ -91,7 +90,7 @@ namespace Progressio.Services.Services
                 .ToList();
 
             _logger.LogInformation("GetUpcoming: User {UserId} has {Count} upcoming items in next {Days} days",
-                userId, totalCount, days);
+                userId, totalCount, search.Days);
 
             return new PagedResult<CalendarItemResponse>
             {
@@ -161,8 +160,19 @@ namespace Progressio.Services.Services
                 .ThenBy(x => x.ContentTitle)
                 .ToList();
         }
+
         public async Task<PagedResult<CalendarItemResponse>> GetMonthAsync(int userId, int year, int month, BaseSearchObject search)
         {
+            if (month < 1 || month > 12)
+            {
+                throw new BusinessException("Month must be between 1 and 12.");
+            }
+
+            if (year < 1900 || year > 2200)
+            {
+                throw new BusinessException("Year must be between 1900 and 2200.");
+            }
+
             var monthStart = new DateTime(year, month, 1, 0, 0, 0, DateTimeKind.Utc);
             var monthEnd = monthStart.AddMonths(1);
 

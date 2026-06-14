@@ -8,7 +8,6 @@ using System.Security.Claims;
 namespace Progressio.WebApi.Controllers
 {
     [ApiController]
-    [AllowAnonymous]
     public class PaymentController : ControllerBase
     {
         private readonly IPaymentService _paymentService;
@@ -17,10 +16,12 @@ namespace Progressio.WebApi.Controllers
         {
             _paymentService = paymentService;
         }
+
         private int GetUserId() =>
-        int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 1;
+            int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
         [HttpGet("api/subscriptions/me")]
+        [Authorize]
         public async Task<ActionResult<SubscriptionResponse>> GetMySubscription()
         {
             var result = await _paymentService.GetMySubscriptionAsync(GetUserId());
@@ -28,6 +29,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPost("api/payments/create-intent")]
+        [Authorize]
         public async Task<ActionResult<PaymentIntentResponse>> CreatePaymentIntent(
             [FromBody] CreatePaymentIntentRequest request)
         {
@@ -36,6 +38,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPost("api/payments/refund")]
+        [Authorize]
         public async Task<ActionResult<PaymentResponse>> Refund([FromBody] RefundRequest request)
         {
             var result = await _paymentService.RefundAsync(GetUserId(), request);
@@ -43,6 +46,7 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPost("api/stripe/webhook")]
+        [AllowAnonymous]
         public async Task<IActionResult> StripeWebhook()
         {
             using var reader = new StreamReader(HttpContext.Request.Body);

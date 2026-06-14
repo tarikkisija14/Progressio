@@ -35,7 +35,7 @@ namespace Progressio.WebApi.Controllers.Base
         }
 
         [HttpPost]
-        [AllowAnonymous]
+        [Authorize(Roles = AppRoles.Admin)]
         public virtual async Task<ActionResult<TResponse>> Insert([FromBody] TInsert request)
         {
             var result = await _service.InsertAsync(request);
@@ -43,8 +43,7 @@ namespace Progressio.WebApi.Controllers.Base
         }
 
         [HttpPut("{id}")]
-        //[Authorize(Roles = AppRoles.Admin)]
-        [AllowAnonymous]
+        [Authorize(Roles = AppRoles.Admin)]
         public virtual async Task<ActionResult<TResponse>> Update(int id, [FromBody] TUpdate request)
         {
             var result = await _service.UpdateAsync(id, request);
@@ -52,8 +51,7 @@ namespace Progressio.WebApi.Controllers.Base
         }
 
         [HttpDelete("{id}")]
-        //[Authorize(Roles = AppRoles.Admin)]
-        [AllowAnonymous]
+        [Authorize(Roles = AppRoles.Admin)]
         public virtual async Task<ActionResult> Delete(int id)
         {
             await _service.DeleteAsync(id);

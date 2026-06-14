@@ -14,6 +14,7 @@ import 'package:progressio_desktop/screens/stats_dashboard_screen.dart';
 import 'package:progressio_desktop/screens/subscription_list_screen.dart';
 import 'package:progressio_desktop/screens/user_list_screen.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class MasterScreen extends StatelessWidget {
   const MasterScreen({super.key, required this.child, required this.title});
@@ -26,25 +27,42 @@ class MasterScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
+        backgroundColor: AppColors.backgroundRaised,
         foregroundColor: AppColors.textPrimary,
-        title: Text(title),
+        toolbarHeight: 66,
+        titleSpacing: 6,
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
+          ),
+        ),
         elevation: 0,
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 18),
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.35)),
+                  borderRadius: BorderRadius.circular(AppRadii.pill),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.35),
+                  ),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.admin_panel_settings_outlined, size: 16, color: AppColors.primary),
+                    Icon(
+                      Icons.admin_panel_settings_outlined,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       'Admin',
@@ -62,7 +80,7 @@ class MasterScreen extends StatelessWidget {
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: AppColors.divider),
+          child: Container(height: 1, color: AppColors.hairline),
         ),
       ),
       drawer: Drawer(
@@ -70,11 +88,11 @@ class MasterScreen extends StatelessWidget {
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(18, 48, 18, 20),
+              padding: const EdgeInsets.fromLTRB(18, 46, 18, 20),
               decoration: const BoxDecoration(
-                color: AppColors.surfaceElevated,
+                color: AppColors.surfaceSoft,
                 border: Border(
-                  bottom: BorderSide(color: AppColors.divider),
+                  bottom: BorderSide(color: AppColors.hairline),
                 ),
               ),
               child: Column(
@@ -82,30 +100,7 @@ class MasterScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [AppColors.primaryHover, AppColors.primary],
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withOpacity(0.25),
-                              blurRadius: 22,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.play_circle_filled,
-                          color: Colors.black,
-                          size: 26,
-                        ),
-                      ),
+                      const AppBrandMark(size: 46, iconSize: 27),
                       const SizedBox(width: 12),
                       const Expanded(
                         child: Column(
@@ -117,7 +112,7 @@ class MasterScreen extends StatelessWidget {
                                 color: AppColors.textPrimary,
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: -0.3,
+                                letterSpacing: 0,
                               ),
                             ),
                             SizedBox(height: 2),
@@ -139,7 +134,8 @@ class MasterScreen extends StatelessWidget {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
                 children: [
                   _navSection('Content'),
                   _navItem(
@@ -236,20 +232,8 @@ class MasterScreen extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF111111),
-                AppColors.background,
-              ],
-            ),
-          ),
-          child: child,
+        child: AppShellBackground(
+          child: SizedBox.expand(child: child),
         ),
       ),
     );
@@ -264,7 +248,7 @@ class MasterScreen extends StatelessWidget {
           color: AppColors.primary,
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          letterSpacing: 1.1,
+          letterSpacing: 1,
         ),
       ),
     );
@@ -276,31 +260,55 @@ class MasterScreen extends StatelessWidget {
     required String label,
     required Widget screen,
   }) {
+    final selected = title == label ||
+        (title == 'Seasons' && label == 'Seasons & Episodes') ||
+        (title.startsWith('Episodes') && label == 'Seasons & Episodes') ||
+        (title == 'Comment Moderation' && label == 'Comments') ||
+        (title == 'Countries & Cities' && label == 'Countries & Cities') ||
+        (title == 'Stats Dashboard' && label == 'Stats Dashboard');
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: ListTile(
-        dense: true,
-        minLeadingWidth: 24,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        leading: Icon(icon, color: AppColors.textMuted, size: 21),
-        title: Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primarySoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          border: Border.all(
+            color: selected ? AppColors.primaryGlow : Colors.transparent,
           ),
         ),
-        hoverColor: AppColors.primarySoft,
-        splashColor: AppColors.primarySoft,
-        onTap: () {
-          Navigator.pop(context);
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => screen),
-          );
-        },
+        child: ListTile(
+          dense: true,
+          minLeadingWidth: 24,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
+          leading: Icon(
+            icon,
+            color: selected ? AppColors.primary : AppColors.textMuted,
+            size: 21,
+          ),
+          title: Text(
+            label,
+            style: TextStyle(
+              color: selected ? AppColors.textPrimary : AppColors.textSecondary,
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+          hoverColor: AppColors.primarySoft,
+          splashColor: AppColors.primarySoft,
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => screen),
+            );
+          },
+        ),
       ),
     );
   }
