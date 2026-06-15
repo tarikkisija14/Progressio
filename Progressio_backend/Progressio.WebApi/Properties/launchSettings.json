@@ -8,7 +8,28 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5193",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DB_NAME": "230005",
+        "DB_PASSWORD": "Progressio@140394",
+        "SQLSERVER_PORT": "1433",
+        "Jwt__Key": "Progressio_Development_JWT_Secret_Key_2026_12345",
+        "Jwt__Issuer": "Progressio",
+        "Jwt__Audience": "Progressio",
+        "Security__TokenHashKey": "Progressio_Token_Hash_Key_2026_12345",
+        "RabbitMq__Host": "localhost",
+        "RabbitMq__Username": "guest",
+        "RabbitMq__Password": "guest",
+        "RabbitMq__Port": "5672",
+        "Stripe__PublishableKey": "pk_test_51SaZzJI1ZnBPCvLF1oKFX1EfqfDUyrPn7KvhsCrNts733HEwXuWgclvtjXJKcKUjCROhOk1AiKCmzZVWL82G4jjs00c3Imxnvc",
+        "Stripe__SecretKey": "sk_test_51SaZzJI1ZnBPCvLFQcDlz0kou3VR5VOYVIbq25jVbr9mXiNOAIAAb24QOKrMi1K6PrGT71XeUNs8i0WYgSYuazXo00zZZtdf2W",
+        "Stripe__WebhookSecret": "whsec_cd7b3dae0629f10edcffd0f04720b6d23d3e6c01c1aff0b31f384f8702af365f",
+        "Api__InternalKey": "progressio-internal-key-2025",
+        "Stats__AvgMinutesPerChapter": "20",
+        "Stats__AvgHoursPerGame": "2",
+        "Cors__AllowedOrigins": "http://localhost:3000,http://localhost:5000,http://localhost:8080",
+        "Storage__WebRootPath": "wwwroot",
+        "Storage__ProfileUploadPath": "wwwroot/uploads/profiles",
+        "DataProtection__KeysPath": ".keys"
       }
     },
     "https": {
@@ -18,7 +39,28 @@
       "launchUrl": "swagger",
       "applicationUrl": "https://localhost:7204;http://localhost:5193",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DB_NAME": "230005",
+        "DB_PASSWORD": "Progressio@140394",
+        "SQLSERVER_PORT": "1433",
+        "Jwt__Key": "Progressio_Development_JWT_Secret_Key_2026_12345",
+        "Jwt__Issuer": "Progressio",
+        "Jwt__Audience": "Progressio",
+        "Security__TokenHashKey": "Progressio_Token_Hash_Key_2026_12345",
+        "RabbitMq__Host": "localhost",
+        "RabbitMq__Username": "guest",
+        "RabbitMq__Password": "guest",
+        "RabbitMq__Port": "5672",
+        "Stripe__PublishableKey": "pk_test_51SaZzJI1ZnBPCvLF1oKFX1EfqfDUyrPn7KvhsCrNts733HEwXuWgclvtjXJKcKUjCROhOk1AiKCmzZVWL82G4jjs00c3Imxnvc",
+        "Stripe__SecretKey": "sk_test_51SaZzJI1ZnBPCvLFQcDlz0kou3VR5VOYVIbq25jVbr9mXiNOAIAAb24QOKrMi1K6PrGT71XeUNs8i0WYgSYuazXo00zZZtdf2W",
+        "Stripe__WebhookSecret": "whsec_cd7b3dae0629f10edcffd0f04720b6d23d3e6c01c1aff0b31f384f8702af365f",
+        "Api__InternalKey": "progressio-internal-key-2025",
+        "Stats__AvgMinutesPerChapter": "20",
+        "Stats__AvgHoursPerGame": "2",
+        "Cors__AllowedOrigins": "http://localhost:3000,http://localhost:5000,http://localhost:8080",
+        "Storage__WebRootPath": "wwwroot",
+        "Storage__ProfileUploadPath": "wwwroot/uploads/profiles",
+        "DataProtection__KeysPath": ".keys"
       }
     }
   }

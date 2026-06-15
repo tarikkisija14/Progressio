@@ -11,5 +11,6 @@ namespace Progressio.Model.Responses.AuthResponses
         public string AccessToken { get; set; } = null!;
         public string RefreshToken { get; set; } = null!;
         public UserResponse User { get; set; } = null!;
+        public IReadOnlyCollection<string> Roles { get; set; } = Array.Empty<string>();
     }
 }

@@ -15,5 +15,6 @@ namespace Progressio.Services.Services
         Task HandleWebhookAsync(string payload, string stripeSignature);
         Task<PaymentResponse> RefundAsync(int userId, RefundRequest request);
         Task<SubscriptionResponse> GetMySubscriptionAsync(int userId);
+        Task<PaymentResponse?> GetLatestPaymentAsync(int userId);
     }
 }

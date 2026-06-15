@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Progressio.Model.Responses.CalendarResponses;
 using Progressio.Model.SearchObjects;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using System.Security.Claims;
 
@@ -12,14 +13,13 @@ namespace Progressio.WebApi.Controllers;
 public class CalendarController : ControllerBase
 {
     private readonly ICalendarService _calendarService;
+    private readonly IAppCurrentUserService _currentUser;
 
-    public CalendarController(ICalendarService calendarService)
+    public CalendarController(ICalendarService calendarService, IAppCurrentUserService currentUser)
     {
         _calendarService = calendarService;
+        _currentUser = currentUser;
     }
-
-    private int GetUserId() =>
-        int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     [HttpGet("api/calendar/upcoming")]
     public async Task<ActionResult<PagedResult<CalendarItemResponse>>> GetUpcoming(
@@ -34,14 +34,15 @@ public class CalendarController : ControllerBase
             PageSize = pageSize
         };
 
-        var result = await _calendarService.GetUpcomingAsync(GetUserId(), search);
+        var result = await _calendarService.GetUpcomingAsync(_currentUser.UserId, search);
         return Ok(result);
     }
 
     [HttpGet("api/calendar/today")]
-    public async Task<ActionResult<List<CalendarItemResponse>>> GetToday()
+    public async Task<ActionResult<PagedResult<CalendarItemResponse>>> GetToday(
+        [FromQuery] BaseSearchObject search)
     {
-        var result = await _calendarService.GetTodayAsync(GetUserId());
+        var result = await _calendarService.GetTodayAsync(_currentUser.UserId, search);
         return Ok(result);
     }
 
@@ -58,7 +59,7 @@ public class CalendarController : ControllerBase
             PageSize = pageSize
         };
 
-        var result = await _calendarService.GetMonthAsync(GetUserId(), year, month, search);
+        var result = await _calendarService.GetMonthAsync(_currentUser.UserId, year, month, search);
         return Ok(result);
     }
 }

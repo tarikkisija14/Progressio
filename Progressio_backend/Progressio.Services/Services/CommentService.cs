@@ -181,14 +181,24 @@ namespace Progressio.Services.Services
 
             if (contentOwner != 0)
             {
-                _publisher.Publish(NotificationsQueue, new SendNotificationMessage
+                try
                 {
-                    UserId = contentOwner,
-                    Title = "New comment",
-                    Message = $"Someone commented on the content '{content.Title}'.",
-                    NotificationType = "CommentLiked",
-                    RelatedEntityId = comment.Id
-                });
+                    await _publisher.PublishAsync(NotificationsQueue, new SendNotificationMessage
+                    {
+                        UserId = contentOwner,
+                        Title = "New comment",
+                        Message = $"Someone commented on the content '{content.Title}'.",
+                        NotificationType = "CommentLiked",
+                        RelatedEntityId = comment.Id
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Comment saved but notification publish failed. CommentId={CommentId}",
+                        comment.Id);
+                }
             }
 
             var user = await _db.Users.FindAsync(userId);
@@ -298,7 +308,7 @@ namespace Progressio.Services.Services
 
                 if (comment.UserId != userId)
                 {
-                    _publisher.Publish(CommentLikedQueue, new CommentLikedMessage
+                    await _publisher.PublishAsync(CommentLikedQueue, new CommentLikedMessage
                     {
                         CommentAuthorUserId = comment.UserId,
                         CommentId = commentId,

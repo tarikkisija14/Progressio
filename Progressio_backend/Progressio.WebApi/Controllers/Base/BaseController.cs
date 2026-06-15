@@ -8,6 +8,7 @@ using Progressio.Services.Services;
 namespace Progressio.WebApi.Controllers.Base
 {
     [ApiController]
+    [Authorize]
     public abstract class BaseController<TResponse, TSearch, TInsert, TUpdate> : ControllerBase
         where TSearch : BaseSearchObject, new()
     {
@@ -19,7 +20,6 @@ namespace Progressio.WebApi.Controllers.Base
         }
 
         [HttpGet]
-        [AllowAnonymous]
         public virtual async Task<ActionResult<PagedResult<TResponse>>> GetPaged([FromQuery] TSearch search)
         {
             var result = await _service.GetPagedAsync(search);
@@ -27,7 +27,6 @@ namespace Progressio.WebApi.Controllers.Base
         }
 
         [HttpGet("{id}")]
-        [AllowAnonymous]
         public virtual async Task<ActionResult<TResponse>> GetById(int id)
         {
             var result = await _service.GetByIdAsync(id);

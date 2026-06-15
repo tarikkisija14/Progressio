@@ -12,10 +12,10 @@ using System.Threading.Tasks;
 
 namespace Progressio.Services.Base
 {
-    public abstract class BaseCRUDService<TEntity,TResponse,TSearch,TInsert,TUpdate>:BaseReadService<TEntity,TResponse,TSearch>,
-        IBaseCRUDService<TResponse,TSearch,TInsert,TUpdate>
-        where TEntity : class,new()
-        where TSearch:BaseSearchObject
+    public abstract class BaseCRUDService<TEntity, TResponse, TSearch, TInsert, TUpdate> : BaseReadService<TEntity, TResponse, TSearch>,
+        IBaseCRUDService<TResponse, TSearch, TInsert, TUpdate>
+        where TEntity : class, new()
+        where TSearch : BaseSearchObject
     {
         private readonly IValidator<TInsert>? _insertValidator;
         private readonly IValidator<TUpdate>? _updateValidator;
@@ -81,8 +81,19 @@ namespace Progressio.Services.Base
 
             await BeforeDeleteAsync(entity);
 
-            _db.Set<TEntity>().Remove(entity);
-            await _db.SaveChangesAsync();
+            if (ShouldPhysicallyDelete(entity))
+                _db.Set<TEntity>().Remove(entity);
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                throw new BusinessException(
+                    $"The {typeof(TEntity).Name} record cannot be deleted because it is used by other records.",
+                    ex);
+            }
         }
 
         protected virtual Task BeforeInsertAsync(TInsert request, TEntity entity)
@@ -94,6 +105,6 @@ namespace Progressio.Services.Base
         protected virtual Task BeforeDeleteAsync(TEntity entity)
            => Task.CompletedTask;
 
-
+        protected virtual bool ShouldPhysicallyDelete(TEntity entity) => true;
     }
 }

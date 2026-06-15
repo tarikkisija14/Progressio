@@ -9,6 +9,7 @@ import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/chapter_provider.dart';
 import 'package:progressio_desktop/providers/content_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 import 'package:progressio_desktop/utils/utils.dart';
 
 class ChapterListScreen extends StatefulWidget {
@@ -47,10 +48,8 @@ class _ChapterListScreenState extends State<ChapterListScreen> {
 
   Future<void> _loadContents() async {
     try {
-      final result = await _contentProvider.get(
-        filter: {'pageSize': 200},
-      );
-      setState(() => _contents = result.items ?? []);
+      final items = await _contentProvider.getAll();
+      if (mounted) setState(() => _contents = items);
     } catch (e) {
       _showError(e.toString());
     }
@@ -193,18 +192,24 @@ class _ChapterListScreenState extends State<ChapterListScreen> {
   }
 
   Future<void> _deleteChapter(Chapter chapter) async {
-    try {
-      await _chapterProvider.delete(chapter.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Chapter deleted.'),
-            backgroundColor: AppColors.error),
-      );
-      _loadChapters(page: _page);
-    } catch (e) {
-      _showError(e.toString());
-    }
+  if (!await showDeleteConfirmation(
+    context,
+    itemName: chapter.title ?? 'Chapter ${chapter.chapterNumber}',
+  )) {
+    return;
   }
+  try {
+    await _chapterProvider.delete(chapter.id);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Chapter deleted.'),
+          backgroundColor: AppColors.error),
+    );
+    _loadChapters(page: _page);
+  } catch (e) {
+    _showError(e.toString());
+  }
+}
 
   int get _totalPages =>
       ((_result?.totalCount ?? 0) / _pageSize).ceil();

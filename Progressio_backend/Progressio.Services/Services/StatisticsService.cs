@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Progressio.Model.Enums;
 using Progressio.Model.Exceptions;
 using Progressio.Model.Responses.StatsResponses;
+using Progressio.Services.Configuration;
 using Progressio.Services.Database;
 using System;
 using System.Collections.Generic;
@@ -20,7 +21,8 @@ namespace Progressio.Services.Services
         private readonly ApplicationDbContext _db;
         private readonly IMemoryCache _cache;
         private readonly ILogger<StatisticsService> _logger;
-        private readonly IConfiguration _config;
+        private readonly double _avgMinutesPerChapter;
+        private readonly double _avgHoursPerGame;
 
         private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(10);
         internal const string StatsCachePrefix = "stats:basic:";
@@ -35,7 +37,8 @@ namespace Progressio.Services.Services
             _db = db;
             _cache = cache;
             _logger = logger;
-            _config = config;
+            _avgMinutesPerChapter = config.GetRequiredDouble("Stats:AvgMinutesPerChapter");
+            _avgHoursPerGame = config.GetRequiredDouble("Stats:AvgHoursPerGame");
         }
 
         private async Task<bool> IsPremiumAsync(int userId)
@@ -107,8 +110,6 @@ namespace Progressio.Services.Services
                 return cached;
             }
 
-            var avgMinutesPerChapter = _config.GetValue<double>("Stats:AvgMinutesPerChapter", 6.0);
-            var avgHoursPerGame = _config.GetValue<double>("Stats:AvgHoursPerGame", 20.0);
 
             var watchMinutes = await _db.EpisodeProgresses
                 .Include(ep => ep.Progress)
@@ -134,8 +135,8 @@ namespace Progressio.Services.Services
             var breakdownByType = new List<HoursBreakdownItem>
             {
                 new() { ContentType = "Series/Anime", Hours = Math.Round(watchMinutes / 60.0, 2) },
-                new() { ContentType = "Book/Manga",   Hours = Math.Round(chaptersRead * avgMinutesPerChapter / 60.0, 2) },
-                new() { ContentType = "Game",         Hours = Math.Round(completedGames * avgHoursPerGame, 2) }
+                new() { ContentType = "Book/Manga",   Hours = Math.Round(chaptersRead * _avgMinutesPerChapter / 60.0, 2) },
+                new() { ContentType = "Game",         Hours = Math.Round(completedGames * _avgHoursPerGame, 2) }
             };
 
             var genreStats = await _db.UserContentProgresses
@@ -246,8 +247,8 @@ namespace Progressio.Services.Services
             var premiumResult = new PremiumStatsResponse
             {
                 TotalWatchHours = Math.Round(watchMinutes / 60.0, 2),
-                TotalReadHours = Math.Round(chaptersRead * avgMinutesPerChapter / 60.0, 2),
-                TotalGameHours = Math.Round(completedGames * avgHoursPerGame, 2),
+                TotalReadHours = Math.Round(chaptersRead * _avgMinutesPerChapter / 60.0, 2),
+                TotalGameHours = Math.Round(completedGames * _avgHoursPerGame, 2),
                 BreakdownByType = breakdownByType,
                 TopGenreCompletionRates = genreStats,
                 ActivityPattern = activityPattern,
@@ -265,8 +266,6 @@ namespace Progressio.Services.Services
             var yearStart = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
             var yearEnd = new DateTime(year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-            var avgMinutesPerChapter = _config.GetValue<double>("Stats:AvgMinutesPerChapter", 6.0);
-            var avgHoursPerGame = _config.GetValue<double>("Stats:AvgHoursPerGame", 20.0);
 
             var watchMinutes = await _db.EpisodeProgresses
                 .Include(ep => ep.Progress)
@@ -295,8 +294,8 @@ namespace Progressio.Services.Services
 
             var totalHours = Math.Round(
                 watchMinutes / 60.0
-                + chaptersRead * avgMinutesPerChapter / 60.0
-                + completedGames * avgHoursPerGame, 2);
+                + chaptersRead * _avgMinutesPerChapter / 60.0
+                + completedGames * _avgHoursPerGame, 2);
 
             var totalCompleted = await _db.UserContentProgresses
                 .Where(p => p.UserId == userId

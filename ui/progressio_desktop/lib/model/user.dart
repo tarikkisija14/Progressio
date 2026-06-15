@@ -1,3 +1,5 @@
+import 'package:progressio_desktop/core/api_config.dart';
+
 class AppUser {
   final int id;
   final String firstName;
@@ -38,7 +40,7 @@ class AppUser {
       lastName: json['lastName'] ?? '',
       username: json['username'] ?? '',
       email: json['email'] ?? '',
-      profileImageUrl: json['profileImageUrl'],
+      profileImageUrl: ApiConfig.resolveResource(json['profileImageUrl'] as String?),
       isProfilePublic: json['isProfilePublic'] ?? true,
       isActive: json['isActive'] ?? true,
       isPremium: json['isPremium'] ?? false,

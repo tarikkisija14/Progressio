@@ -1,5 +1,6 @@
 ﻿using Progressio.Model.Requests.ProgressRequests;
 using Progressio.Model.Responses.ProgressResponses;
+using Progressio.Model.SearchObjects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,14 +14,14 @@ namespace Progressio.Services.Services
     {
         Task<ProgressResponse> StartProgressAsync(int userId, StartProgressRequest request);
         Task<ProgressResponse> ChangeStatusAsync(int userId, int progressId, ChangeStatusRequest request);
-        Task<ProgressResponse> GetProgressAsync(int userId, int contentId);
-        Task<List<ProgressResponse>> GetMyProgressesAsync(int userId);
+        Task<ProgressResponse?> GetProgressAsync(int userId, int contentId);
+        Task<PagedResult<ProgressResponse>> GetMyProgressesAsync(int userId, BaseSearchObject search);
 
         Task<EpisodeProgressResponse> MarkEpisodeAsync(int userId, int progressId, MarkEpisodeRequest request);
-        Task<List<EpisodeProgressResponse>> GetEpisodeProgressesAsync(int userId, int progressId);
+        Task<PagedResult<EpisodeProgressResponse>> GetEpisodeProgressesAsync(int userId, int progressId, BaseSearchObject search);
 
         Task<ChapterProgressResponse> MarkChapterAsync(int userId, int progressId, MarkChapterRequest request);
-        Task<List<ChapterProgressResponse>> GetChapterProgressesAsync(int userId, int progressId);
+        Task<PagedResult<ChapterProgressResponse>> GetChapterProgressesAsync(int userId, int progressId, BaseSearchObject search);
 
         Task<StreakResponse> GetMyStreakAsync(int userId);
     }

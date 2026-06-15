@@ -31,7 +31,7 @@ namespace Progressio.Services.Services
         {
             var result = await base.GetPagedAsync(search);
 
-            
+
             if (search.RequestingUserId.HasValue)
             {
                 await LogSearchAsync(search, result.TotalCount);
@@ -68,12 +68,12 @@ namespace Progressio.Services.Services
 
         protected override async Task BeforeInsertAsync(ContentInsertRequest request, Content entity)
         {
-            
+
             var typeExists = await _db.ContentTypes.AnyAsync(ct => ct.Id == request.ContentTypeId);
             if (!typeExists)
                 throw new NotFoundException("ContentType", request.ContentTypeId);
 
-            
+
             if (request.GenreIds.Any())
             {
                 entity.ContentGenres = request.GenreIds
@@ -84,7 +84,7 @@ namespace Progressio.Services.Services
 
         protected override async Task BeforeUpdateAsync(ContentUpdateRequest request, Content entity)
         {
-            
+
             var existing = await _db.ContentGenres
                 .Where(cg => cg.ContentId == entity.Id)
                 .ToListAsync();
@@ -102,16 +102,18 @@ namespace Progressio.Services.Services
 
         protected override Task BeforeDeleteAsync(Content entity)
         {
-           
+
             entity.IsActive = false;
             return Task.CompletedTask;
         }
+        protected override bool ShouldPhysicallyDelete(Content entity) => false;
+
 
         private async Task LogSearchAsync(ContentSearchObject search, int resultCount)
         {
             try
             {
-                
+
                 string? genreIdsJson = search.GenreId.HasValue
                     ? JsonSerializer.Serialize(new[] { search.GenreId.Value })
                     : null;
@@ -135,10 +137,11 @@ namespace Progressio.Services.Services
             }
             catch (Exception ex)
             {
-                
+
                 _logger.LogWarning(ex, "Failed to write SearchLog for User {UserId}", search.RequestingUserId);
             }
         }
 
     }
 }
+

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:progressio_desktop/core/api_client.dart';
+import 'package:progressio_desktop/providers/auth_provider.dart';
 import 'package:progressio_desktop/screens/achievement_list_screen.dart';
+import 'package:progressio_desktop/screens/age_rating_screen.dart';
 import 'package:progressio_desktop/screens/chapter_list_screen.dart';
 import 'package:progressio_desktop/screens/character_list_screen.dart';
 import 'package:progressio_desktop/screens/content_list_screen.dart';
@@ -7,6 +10,8 @@ import 'package:progressio_desktop/screens/content_type_screen.dart';
 import 'package:progressio_desktop/screens/country_screen.dart';
 import 'package:progressio_desktop/screens/episode_comment_list_screen.dart';
 import 'package:progressio_desktop/screens/genre_screen.dart';
+import 'package:progressio_desktop/screens/language_screen.dart';
+import 'package:progressio_desktop/screens/login_screen.dart';
 import 'package:progressio_desktop/screens/platform_screen.dart';
 import 'package:progressio_desktop/screens/report_screen.dart';
 import 'package:progressio_desktop/screens/season_list_screen.dart';
@@ -202,6 +207,18 @@ class MasterScreen extends StatelessWidget {
                   ),
                   _navItem(
                     context: context,
+                    icon: Icons.family_restroom_outlined,
+                    label: 'Age Ratings',
+                    screen: const AgeRatingScreen(),
+                  ),
+                  _navItem(
+                    context: context,
+                    icon: Icons.translate_outlined,
+                    label: 'Languages',
+                    screen: const LanguageScreen(),
+                  ),
+                  _navItem(
+                    context: context,
                     icon: Icons.flag_outlined,
                     label: 'Countries & Cities',
                     screen: const CountryScreen(),
@@ -228,6 +245,27 @@ class MasterScreen extends StatelessWidget {
                 ],
               ),
             ),
+            const Divider(height: 1, color: AppColors.hairline),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: ListTile(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                ),
+                leading: const Icon(
+                  Icons.logout_rounded,
+                  color: AppColors.error,
+                ),
+                title: const Text(
+                  'Sign Out',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                onTap: () => _logout(context),
+              ),
+            ),
           ],
         ),
       ),
@@ -236,6 +274,54 @@ class MasterScreen extends StatelessWidget {
           child: SizedBox.expand(child: child),
         ),
       ),
+    );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sign out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final refreshToken = AuthProvider.refreshToken;
+    try {
+      if (refreshToken != null && refreshToken.isNotEmpty) {
+        await ApiClient.post(
+          'auth/logout',
+          body: {'refreshToken': refreshToken},
+        );
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sign out failed: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    AuthProvider.clear();
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
     );
   }
 

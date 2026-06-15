@@ -77,8 +77,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  /// Navigira na odgovarajući screen ovisno o tipu notifikacije i relatedEntityId.
+
   void _handleTap(NotificationItem item) {
+    debugPrint('NOTIFICATION TYPE: ${item.type}');
+debugPrint('RELATED ID: ${item.relatedEntityId}');
     _markRead(item);
 
     final entityId = item.relatedEntityId;
@@ -87,7 +89,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final type = item.type.toLowerCase();
 
     if (type == 'follow') {
-      // relatedEntityId je userId koji nas je pratio
+      
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -96,10 +98,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       );
     } else if (type == 'achievement') {
       // Achievement notifikacije nemaju specifičan entity screen — samo mark read
-    } else if (type == 'listinvite') {
-      // relatedEntityId je listId — prikaži dijalog za prihvatanje/odbijanje pozivnice
-      _showListInviteDialog(item, entityId);
-    } else {
+    } else if (type == 'listinvite' ||
+    type == 'list_invite' ||
+    type == 'listinvitation' ||
+    type.contains('invite')) {
+  _showListInviteDialog(item, entityId);
+} else {
       // 'episode', 'comment' i sve ostalo:
       // relatedEntityId je contentId
       Navigator.push(
@@ -366,12 +370,16 @@ class _NotificationTile extends StatelessWidget {
   }
 
   bool get _isNavigable {
-    if (item.relatedEntityId == null) return false;
-    final t = item.type.toLowerCase();
-    return t == 'follow' || t == 'episode' || t == 'comment' ||
-        t == 'listinvite';
-  }
-
+  if (item.relatedEntityId == null) return false;
+  final t = item.type.toLowerCase();
+  return t == 'follow' ||
+      t == 'episode' ||
+      t == 'comment' ||
+      t == 'listinvite' ||
+      t == 'list_invite' ||
+      t == 'listinvitation' ||
+      t.contains('invite');
+}
   Widget _buildIcon() {
     IconData icon;
     Color color;
@@ -397,8 +405,13 @@ class _NotificationTile extends StatelessWidget {
         color = AppColors.success;
         break;
       default:
-        icon = Icons.notifications_rounded;
-        color = AppColors.textMuted;
+  if (item.type.toLowerCase().contains('invite')) {
+    icon = Icons.list_alt_rounded;
+    color = AppColors.success;
+  } else {
+    icon = Icons.notifications_rounded;
+    color = AppColors.textMuted;
+  }
     }
 
     return Container(

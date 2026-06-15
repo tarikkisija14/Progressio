@@ -6,7 +6,7 @@ namespace Progressio.WebApi.Controllers
 {
     [ApiController]
     [Route("api/admin/reports")]
-    [AllowAnonymous]
+    [Authorize(Roles = AppRoles.Admin)]
     public class ReportController : ControllerBase
     {
         private readonly IReportService _reportService;

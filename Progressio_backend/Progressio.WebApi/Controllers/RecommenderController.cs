@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Progressio.Model.Exceptions;
 using Progressio.Model.Responses.RecommendationResponses;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using System.Security.Claims;
 
@@ -12,18 +13,12 @@ namespace Progressio.WebApi.Controllers
     public class RecommenderController : ControllerBase
     {
         private readonly IRecommenderService _recommenderService;
+        private readonly IAppCurrentUserService _currentUser;
 
-        public RecommenderController(IRecommenderService recommenderService)
+        public RecommenderController(IRecommenderService recommenderService, IAppCurrentUserService currentUser)
         {
             _recommenderService = recommenderService;
-        }
-
-        private int GetUserId()
-        {
-            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(value, out var id) || id <= 0)
-                throw new UnauthorizedException("JWT token does not contain a valid user identifier.");
-            return id;
+            _currentUser = currentUser;
         }
 
         [HttpGet("api/recommendations")]
@@ -33,7 +28,7 @@ namespace Progressio.WebApi.Controllers
             if (count < 1) count = 1;
             if (count > 100) count = 100;
 
-            var result = await _recommenderService.GetRecommendationsAsync(GetUserId(), count);
+            var result = await _recommenderService.GetRecommendationsAsync(_currentUser.UserId, count);
             return Ok(result);
         }
     }

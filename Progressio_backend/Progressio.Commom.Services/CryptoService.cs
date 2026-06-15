@@ -3,35 +3,44 @@ using System.Text;
 
 namespace Progressio.Commom.Services;
 
-public class CryptoService
+public sealed class CryptoService
 {
-    
-    public string HashPassword(string password)
+    private readonly byte[] _tokenHashKey;
+
+    public CryptoService(string tokenHashKey)
     {
-        return BCrypt.Net.BCrypt.HashPassword(password, BCrypt.Net.BCrypt.GenerateSalt(12));
+        if (string.IsNullOrWhiteSpace(tokenHashKey) || tokenHashKey.Length < 32)
+            throw new ArgumentException(
+                "Token hash key must contain at least 32 characters.",
+                nameof(tokenHashKey));
+
+        _tokenHashKey = Encoding.UTF8.GetBytes(tokenHashKey);
     }
 
-   
+    public string HashPassword(string password)
+    {
+        return BCrypt.Net.BCrypt.HashPassword(
+            password,
+            BCrypt.Net.BCrypt.GenerateSalt(12));
+    }
+
     public bool VerifyPassword(string password, string hash)
     {
         return BCrypt.Net.BCrypt.Verify(password, hash);
     }
 
-   
     public string GenerateSecureToken()
     {
-        var randomBytes = new byte[64];
-        using var rng = RandomNumberGenerator.Create();
-        rng.GetBytes(randomBytes);
-        return Convert.ToBase64String(randomBytes);
+        return Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
     }
 
-    
     public string HashToken(string token)
     {
-        var saltedToken = token + "progressio_salt_2025";
-        var bytes = Encoding.UTF8.GetBytes(saltedToken);
-        var hash = SHA256.HashData(bytes);
+        if (string.IsNullOrWhiteSpace(token))
+            throw new ArgumentException("Token is required.", nameof(token));
+
+        using var hmac = new HMACSHA256(_tokenHashKey);
+        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(token));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

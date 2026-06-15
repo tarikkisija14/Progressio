@@ -1114,114 +1114,150 @@ Future<void> _loadChapterProgress() async {
 
   // ─── Chapters Tab ────────────────────────────────────────────────────────────
 
-  Widget _buildChaptersTab() {
-    if (_loadingChapters) {
-      return const Center(
-          child: CircularProgressIndicator(color: AppColors.primary));
-    }
-    if (_chapters.isEmpty) {
-      return const Center(
-          child: Text('No chapters available.',
-              style: TextStyle(color: AppColors.textMuted)));
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _chapters.length,
-      itemBuilder: (_, i) {
-        final ch = _chapters[i];
-        return ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-          leading: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: Text(
-                '${ch.chapterNumber}',
-                style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600),
+ Widget _buildChaptersTab() {
+  if (_loadingChapters) {
+    return const Center(
+      child: CircularProgressIndicator(color: AppColors.primary),
+    );
+  }
+
+  if (_chapters.isEmpty) {
+    return const Center(
+      child: Text(
+        'No chapters available.',
+        style: TextStyle(color: AppColors.textMuted),
+      ),
+    );
+  }
+
+  return ListView.builder(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    itemCount: _chapters.length,
+    itemBuilder: (_, i) {
+      final ch = _chapters[i];
+
+      return ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              '${ch.chapterNumber}',
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          title: Text(ch.title,
-              style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500)),
-          subtitle: ch.releaseDate != null
-              ? Text(formatDate(ch.releaseDate),
-                  style: const TextStyle(
-                      color: AppColors.textFaint, fontSize: 12))
-              : null,
-          trailing: _progress != null
-              ? IconButton(
-                  icon: Icon(
-                    _readChapterIds.contains(ch.id)
-                        ? Icons.check_circle_rounded
-                        : Icons.check_circle_outline,
-                    color: _readChapterIds.contains(ch.id)
-                        ? AppColors.success
-                        : AppColors.textFaint,
-                    size: 20,
+        ),
+        title: Text(
+          ch.title,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: ch.releaseDate != null
+            ? Text(
+                formatDate(ch.releaseDate),
+                style: const TextStyle(
+                  color: AppColors.textFaint,
+                  fontSize: 12,
+                ),
+              )
+            : null,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: AppColors.textFaint,
+                size: 18,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EpisodeCommentsScreen(
+                      episodeId: ch.id,
+                      contentId: widget.contentId,
+                      episodeTitle: ch.title,
+                      isChapter: true,
+                    ),
                   ),
-                  onPressed: () async {
-                    if (_readChapterIds.contains(ch.id)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Chapter already marked as read.'),
-                          backgroundColor: AppColors.warning,
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                      return;
-                    }
-                    try {
-                      await context
-                          .read<ProgressProvider>()
-                          .markChapter(_progress!.id, ch.id, true);
-                      if (mounted) setState(() => _readChapterIds.add(ch.id));
-                      final updated = await context
-                          .read<ProgressProvider>()
-                          .getForContent(widget.contentId);
-                      if (mounted) setState(() => _progress = updated);
-                      if (mounted && _characters.isNotEmpty) {
-                        await showVoteDialog(
-                          context,
-                          characters: _characters,
-                          chapterId: ch.id,
-                          label: 'Best character in this chapter?',
-                        );
-                      }
-                    } catch (e) {
-                      final msg = e.toString();
-                      if (msg.toLowerCase().contains('already') ||
-                          msg.contains('409') ||
-                          msg.toLowerCase().contains('conflict')) {
-                        if (mounted) setState(() => _readChapterIds.add(ch.id));
-                      } else {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(msg),
-                              backgroundColor: AppColors.error,
-                            ),
-                          );
-                        }
-                      }
-                    }
-                  },
-                )
-              : null,
-        );
-      },
-    );
-  }
+                );
+              },
+            ),
+            IconButton(
+              icon: Icon(
+                _readChapterIds.contains(ch.id)
+                    ? Icons.check_circle_rounded
+                    : Icons.check_circle_outline,
+                color: _readChapterIds.contains(ch.id)
+                    ? AppColors.success
+                    : AppColors.textFaint,
+                size: 20,
+              ),
+              onPressed: () async {
+                try {
+                  var progress = _progress;
+
+                  if (progress == null) {
+                    progress = await context
+                        .read<ProgressProvider>()
+                        .startProgress(widget.contentId);
+
+                    if (mounted) setState(() => _progress = progress);
+                  }
+
+                  if (progress.status != 'InProgress') {
+                    progress = await context
+                        .read<ProgressProvider>()
+                        .changeStatus(progress.id, 'InProgress');
+
+                    if (mounted) setState(() => _progress = progress);
+                  }
+
+                  await context
+                      .read<ProgressProvider>()
+                      .markChapter(progress.id, ch.id, true);
+
+                  if (mounted) setState(() => _readChapterIds.add(ch.id));
+
+                  final updated = await context
+                      .read<ProgressProvider>()
+                      .getForContent(widget.contentId);
+
+                  if (mounted && updated != null) {
+                    setState(() => _progress = updated);
+                  }
+                  if (mounted && _characters.isNotEmpty) {
+  await showVoteDialog(
+    context,
+    characters: _characters,
+    chapterId: ch.id,
+    label: 'Best character in this chapter?',
+  );
+}
+                } catch (e) {
+                  if (mounted) _showError(e.toString());
+                }
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   // ─── Characters Tab ──────────────────────────────────────────────────────────
 

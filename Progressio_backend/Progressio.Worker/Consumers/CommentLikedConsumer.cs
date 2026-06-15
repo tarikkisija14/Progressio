@@ -1,12 +1,8 @@
 ﻿using Progressio.Model.Messages;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace Progressio.Worker.Consumers
 {
@@ -87,9 +83,9 @@ namespace Progressio.Worker.Consumers
 
                 try
                 {
-                    var message = JsonSerializer.Deserialize<CommentLikedMessage>(json);
-                    if (message is not null)
-                        await ProcessAsync(message, stoppingToken);
+                    var message = JsonSerializer.Deserialize<CommentLikedMessage>(json)
+                        ?? throw new InvalidOperationException("Invalid comment-liked message payload.");
+                    await ProcessAsync(message, stoppingToken);
 
                     await _channel!.BasicAckAsync(ea.DeliveryTag, false, stoppingToken);
                 }

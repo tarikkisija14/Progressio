@@ -83,9 +83,9 @@ namespace Progressio.Worker.Consumers
 
                 try
                 {
-                    var message = JsonSerializer.Deserialize<ListInviteMessage>(json);
-                    if (message is not null)
-                        await ProcessAsync(message, stoppingToken);
+                    var message = JsonSerializer.Deserialize<ListInviteMessage>(json)
+                        ?? throw new InvalidOperationException("Invalid list-invite message payload.");
+                    await ProcessAsync(message, stoppingToken);
 
                     await _channel!.BasicAckAsync(ea.DeliveryTag, false, stoppingToken);
                 }

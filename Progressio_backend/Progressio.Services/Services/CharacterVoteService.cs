@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Progressio.Model.Exceptions;
 using Progressio.Model.Requests.VoteRequests;
 using Progressio.Model.Responses.VoteResponses;
+using Progressio.Model.SearchObjects;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
 using System;
@@ -36,12 +37,12 @@ namespace Progressio.Services.Services
             if (!validationResult.IsValid)
                 throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
 
-            
+
             var character = await _db.Characters
                 .FirstOrDefaultAsync(c => c.Id == request.CharacterId)
                 ?? throw new NotFoundException("Character", request.CharacterId);
 
-            
+
             if (request.EpisodeId.HasValue)
             {
                 var episodeExists = await _db.Episodes.AnyAsync(e => e.Id == request.EpisodeId.Value);
@@ -56,7 +57,7 @@ namespace Progressio.Services.Services
                     throw new NotFoundException("Chapter", request.ChapterId.Value);
             }
 
-           
+
             var existing = await _db.CharacterVotes
                 .FirstOrDefaultAsync(v =>
                     v.UserId == userId &&
@@ -68,7 +69,7 @@ namespace Progressio.Services.Services
             {
                 if (existing.VoteType == request.VoteType)
                 {
-                    
+
                     _db.CharacterVotes.Remove(existing);
                     await _db.SaveChangesAsync();
                     _logger.LogInformation("User {UserId} removed vote for Character {CharacterId}", userId, request.CharacterId);
@@ -76,7 +77,7 @@ namespace Progressio.Services.Services
                 }
                 else
                 {
-                    
+
                     existing.VoteType = request.VoteType;
                     await _db.SaveChangesAsync();
                     _logger.LogInformation("User {UserId} changed vote for Character {CharacterId} to {VoteType}", userId, request.CharacterId, request.VoteType);
@@ -84,7 +85,7 @@ namespace Progressio.Services.Services
                 }
             }
 
-            
+
             var vote = new CharacterVote
             {
                 UserId = userId,
@@ -102,12 +103,19 @@ namespace Progressio.Services.Services
 
             return MapToResponse(vote, character.Name);
         }
-        public async Task<List<CharacterVoteResponse>> GetMyVotesAsync(int userId)
+        public async Task<PagedResult<CharacterVoteResponse>> GetMyVotesAsync(
+            int userId,
+            BaseSearchObject search)
         {
-            return await _db.CharacterVotes
-                .Include(v => v.Character)
-                .Where(v => v.UserId == userId)
+            var query = _db.CharacterVotes
+                .AsNoTracking()
+                .Where(v => v.UserId == userId);
+
+            var totalCount = await query.CountAsync();
+            var items = await query
                 .OrderByDescending(v => v.CreatedAt)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
                 .Select(v => new CharacterVoteResponse
                 {
                     Id = v.Id,
@@ -120,6 +128,14 @@ namespace Progressio.Services.Services
                     CreatedAt = v.CreatedAt
                 })
                 .ToListAsync();
+
+            return new PagedResult<CharacterVoteResponse>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
         }
         private static CharacterVoteResponse MapToResponse(CharacterVote vote, string characterName)
         {
@@ -138,3 +154,4 @@ namespace Progressio.Services.Services
 
     }
 }
+

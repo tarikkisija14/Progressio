@@ -10,6 +10,7 @@ import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/character_provider.dart';
 import 'package:progressio_desktop/providers/content_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class CharacterListScreen extends StatefulWidget {
   const CharacterListScreen({super.key});
@@ -51,8 +52,8 @@ void initState() {
 
   Future<void> _loadContents() async {
     try {
-      final result = await _contentProvider.get(filter: {'pageSize': 200});
-      setState(() => _contents = result.items ?? []);
+      final items = await _contentProvider.getAll();
+      if (mounted) setState(() => _contents = items);
     } catch (e) {
       _showError(e.toString());
     }
@@ -207,6 +208,7 @@ void initState() {
   }
 
   Future<void> _deleteCharacter(Character character) async {
+    if (!await showDeleteConfirmation(context, itemName: character.name)) return;
     try {
       await _characterProvider.delete(character.id);
       ScaffoldMessenger.of(context).showSnackBar(

@@ -13,12 +13,13 @@ namespace Progressio.WebApi.Middleware
             _logger = logger;
         }
 
-        public async ValueTask<bool> TryHandleAsync(HttpContext httpContext,Exception exception,CancellationToken cancellationToken)
+        public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
         {
             var (statusCode, title) = exception switch
             {
                 NotFoundException => (StatusCodes.Status404NotFound, "Resurs nije pronađen"),
                 BusinessException => (StatusCodes.Status400BadRequest, "Greška poslovne logike"),
+                ConflictException => (StatusCodes.Status409Conflict, "Konflikt podataka"),
                 UnauthorizedException => (StatusCodes.Status401Unauthorized, "Autentifikacija obavezna"),
                 ForbiddenException => (StatusCodes.Status403Forbidden, "Pristup zabranjen"),
                 AppException => (StatusCodes.Status400BadRequest, "Greška zahtjeva"),
@@ -38,8 +39,8 @@ namespace Progressio.WebApi.Middleware
             {
                 Status = statusCode,
                 Title = title,
-                
-                Detail = statusCode < 500 ? exception.Message : "Molimo pokušajte ponovo. Ako problem persists, kontaktirajte podršku."
+
+                Detail = statusCode < 500 ? exception.Message : "Molimo pokušajte ponovo. Ako se problem nastavi, kontaktirajte podršku."
             };
 
             httpContext.Response.StatusCode = statusCode;

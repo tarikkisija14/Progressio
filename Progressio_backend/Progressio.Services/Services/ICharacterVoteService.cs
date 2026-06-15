@@ -1,5 +1,6 @@
 ﻿using Progressio.Model.Requests.VoteRequests;
 using Progressio.Model.Responses.VoteResponses;
+using Progressio.Model.SearchObjects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +12,6 @@ namespace Progressio.Services.Services
     public interface ICharacterVoteService
     {
         Task<CharacterVoteResponse?> VoteAsync(int userId, CharacterVoteRequest request);
-        Task<List<CharacterVoteResponse>> GetMyVotesAsync(int userId);
+        Task<PagedResult<CharacterVoteResponse>> GetMyVotesAsync(int userId, BaseSearchObject search);
     }
 }

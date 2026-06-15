@@ -6,6 +6,7 @@ using Progressio.Model.Enums;
 using Progressio.Model.Exceptions;
 using Progressio.Model.Requests.PaymentRequests;
 using Progressio.Model.Responses.PaymentResponses;
+using Progressio.Services.Configuration;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
 using Stripe;
@@ -17,10 +18,10 @@ using System.Threading.Tasks;
 
 namespace Progressio.Services.Services
 {
-    public class PaymentService:IPaymentService
+    public class PaymentService : IPaymentService
     {
         private readonly ApplicationDbContext _db;
-        private readonly IConfiguration _config;
+        private readonly string _webhookSecret;
         private readonly ILogger<PaymentService> _logger;
         private readonly IValidator<CreatePaymentIntentRequest> _createIntentValidator;
         private readonly IValidator<RefundRequest> _refundValidator;
@@ -39,7 +40,7 @@ namespace Progressio.Services.Services
        IValidator<RefundRequest> refundValidator)
         {
             _db = db;
-            _config = config;
+            _webhookSecret = config.GetRequiredValue("Stripe:WebhookSecret");
             _logger = logger;
             _createIntentValidator = createIntentValidator;
             _refundValidator = refundValidator;
@@ -56,12 +57,30 @@ namespace Progressio.Services.Services
 
             var planType = Enum.Parse<PlanType>(request.PlanType);
 
+            var now = DateTime.UtcNow;
+            var hasActiveSubscription = await _db.Subscriptions
+                .AnyAsync(s => s.UserId == userId
+                    && s.Status == SubscriptionStatus.Active
+                    && s.EndDate > now
+                    && s.PlanType != PlanType.Free);
+
+            if (hasActiveSubscription)
+                throw new BusinessException("You already have an active Premium subscription.");
+
+            var hasPendingPayment = await _db.Payments
+                .AnyAsync(p => p.UserId == userId && p.Status == PaymentStatus.Pending);
+
+            if (hasPendingPayment)
+                throw new BusinessException("A payment is already in progress. Complete or cancel it before starting another payment.");
+
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+
             var subscription = new Database.Entities.Subscription
             {
                 UserId = userId,
                 PlanType = planType,
-                StartDate = DateTime.UtcNow,
-                EndDate = DateTime.UtcNow.AddDays(plan.DurationDays),
+                StartDate = now,
+                EndDate = now.AddDays(plan.DurationDays),
                 Status = SubscriptionStatus.Expired,
                 AutoRenew = false
             };
@@ -98,6 +117,7 @@ namespace Progressio.Services.Services
 
             _db.Payments.Add(payment);
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             _logger.LogInformation(
                 "PaymentIntent {IntentId} created for User {UserId}, Plan {Plan}, Amount {Amount}",
@@ -115,13 +135,10 @@ namespace Progressio.Services.Services
 
         public async Task HandleWebhookAsync(string payload, string stripeSignature)
         {
-            var webhookSecret = _config["Stripe:WebhookSecret"]
-                ?? throw new InvalidOperationException("Stripe WebhookSecret is not configured.");
-
             Event stripeEvent;
             try
             {
-                stripeEvent = EventUtility.ConstructEvent(payload, stripeSignature, webhookSecret);
+                stripeEvent = EventUtility.ConstructEvent(payload, stripeSignature, _webhookSecret);
             }
             catch (StripeException ex)
             {
@@ -155,12 +172,27 @@ namespace Progressio.Services.Services
                 return;
             }
 
-            // Idempotency guard — already completed
-            if (payment.Status == PaymentStatus.Completed)
+            if (payment.Status != PaymentStatus.Pending)
             {
                 _logger.LogInformation(
-                    "Webhook: Payment {PaymentId} already completed — ignoring duplicate event.", payment.Id);
+                    "Webhook: Payment {PaymentId} has status {Status}; duplicate or stale event ignored.",
+                    payment.Id,
+                    payment.Status);
                 return;
+            }
+
+            var expectedAmount = (long)(payment.Amount * 100m);
+            if (intent.Amount != expectedAmount ||
+                !string.Equals(intent.Currency, payment.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogError(
+                    "Webhook amount mismatch for Payment {PaymentId}. Expected {ExpectedAmount} {ExpectedCurrency}, received {ActualAmount} {ActualCurrency}.",
+                    payment.Id,
+                    expectedAmount,
+                    payment.Currency,
+                    intent.Amount,
+                    intent.Currency);
+                throw new BusinessException("Stripe payment amount or currency does not match the server-side catalog.");
             }
 
             payment.Status = PaymentStatus.Completed;
@@ -209,6 +241,9 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(p => p.Id == request.PaymentId && p.UserId == userId)
                 ?? throw new NotFoundException("Payment", request.PaymentId);
 
+            if (payment.Status == PaymentStatus.Refunded)
+                return MapToPaymentResponse(payment);
+
             if (payment.Status != PaymentStatus.Completed)
                 throw new BusinessException("Only completed payments can be refunded.");
 
@@ -221,7 +256,11 @@ namespace Progressio.Services.Services
             };
 
             var refundService = new RefundService();
-            var refund = await refundService.CreateAsync(refundOptions);
+            var requestOptions = new RequestOptions
+            {
+                IdempotencyKey = $"refund-payment-{payment.Id}"
+            };
+            var refund = await refundService.CreateAsync(refundOptions, requestOptions);
 
             payment.Status = PaymentStatus.Refunded;
             payment.RefundedAt = DateTime.UtcNow;
@@ -271,6 +310,17 @@ namespace Progressio.Services.Services
             };
         }
 
+        public async Task<PaymentResponse?> GetLatestPaymentAsync(int userId)
+        {
+            var payment = await _db.Payments
+                .AsNoTracking()
+                .Where(p => p.UserId == userId)
+                .OrderByDescending(p => p.Id)
+                .FirstOrDefaultAsync();
+
+            return payment is null ? null : MapToPaymentResponse(payment);
+        }
+
         private static PaymentResponse MapToPaymentResponse(Payment payment) => new()
         {
             Id = payment.Id,
@@ -280,6 +330,7 @@ namespace Progressio.Services.Services
             Amount = payment.Amount,
             Currency = payment.Currency,
             Status = payment.Status.ToString(),
+            IsPaid = payment.Status == PaymentStatus.Completed,
             PaidAt = payment.PaidAt,
             RefundedAt = payment.RefundedAt,
             RefundedAmount = payment.RefundedAmount

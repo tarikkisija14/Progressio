@@ -1,4 +1,5 @@
 ﻿using RabbitMQ.Client;
+using Progressio.Services.Configuration;
 
 namespace Progressio.Worker.Consumers;
 
@@ -11,10 +12,10 @@ internal static class RabbitMqConnectionHelper
     {
         var factory = new ConnectionFactory
         {
-            HostName = configuration["RabbitMq:Host"] ?? "localhost",
-            UserName = configuration["RabbitMq:Username"] ?? "guest",
-            Password = configuration["RabbitMq:Password"] ?? "guest",
-            Port = int.Parse(configuration["RabbitMq:Port"] ?? "5672")
+            HostName = configuration.GetRequiredValue("RabbitMq:Host"),
+            UserName = configuration.GetRequiredValue("RabbitMq:Username"),
+            Password = configuration.GetRequiredValue("RabbitMq:Password"),
+            Port = configuration.GetRequiredInt("RabbitMq:Port")
         };
 
         for (var attempt = 1; attempt <= 10; attempt++)

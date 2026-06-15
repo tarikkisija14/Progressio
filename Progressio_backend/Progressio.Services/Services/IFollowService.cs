@@ -15,6 +15,6 @@ namespace Progressio.Services.Services
         Task<PagedResult<FollowerResponse>> GetFollowersAsync(int userId, FollowSearchObject search);
         Task<PagedResult<FollowerResponse>> GetFollowingAsync(int userId, FollowSearchObject search);
         Task<UserProfileResponse> GetUserProfileAsync(int targetUserId, int? currentUserId);
-
+        Task<PagedResult<UserSearchResponse>> SearchUsersAsync(int currentUserId, UserSearchObject search);
     }
 }

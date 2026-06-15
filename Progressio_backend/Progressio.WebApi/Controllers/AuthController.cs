@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Progressio.Model.Exceptions;
 using Progressio.Model.Requests.AuthRequests;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using System.Security.Claims;
 
@@ -12,16 +13,17 @@ namespace Progressio.WebApi.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IAppCurrentUserService _currentUser;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, IAppCurrentUserService currentUser)
     {
         _authService = authService;
+        _currentUser = currentUser;
     }
 
     [HttpPost("register")]
     [AllowAnonymous]
-    public async Task<IActionResult> Register(
-        [FromBody] RegisterRequest request)
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         var result = await _authService.RegisterAsync(request);
         return Ok(result);
@@ -29,8 +31,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
-    public async Task<IActionResult> Login(
-        [FromBody] LoginRequest request)
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         var result = await _authService.LoginAsync(request);
         return Ok(result);
@@ -38,21 +39,36 @@ public class AuthController : ControllerBase
 
     [HttpPost("refresh")]
     [AllowAnonymous]
-    public async Task<IActionResult> Refresh(
-        [FromBody] RefreshTokenRequest request)
+    public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request)
     {
-        var result = await _authService.RefreshTokenAsync(
-            request.RefreshToken);
-
+        var result = await _authService.RefreshTokenAsync(request.RefreshToken);
         return Ok(result);
+    }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        await _authService.RequestPasswordResetAsync(request);
+        return Ok(new
+        {
+            message = "If an active account exists for this email address, a password reset token has been sent."
+        });
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        await _authService.ResetPasswordAsync(request);
+        return Ok(new { message = "Password was reset successfully." });
     }
 
     [HttpPost("logout")]
     [Authorize]
-    public async Task<IActionResult> Logout(
-        [FromBody] RefreshTokenRequest request)
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenRequest request)
     {
-        await _authService.LogoutAsync(request.RefreshToken);
+        await _authService.LogoutAsync(_currentUser.UserId, request.RefreshToken);
         return NoContent();
     }
 
@@ -60,38 +76,33 @@ public class AuthController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetMe()
     {
-        var result = await _authService.GetCurrentUserAsync(
-            GetCurrentUserId());
-
+        var result = await _authService.GetCurrentUserAsync(_currentUser.UserId);
         return Ok(result);
     }
 
     [HttpPost("change-password")]
     [Authorize]
-    public async Task<IActionResult> ChangePassword(
-        [FromBody] ChangePasswordRequest request)
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
     {
-        await _authService.ChangePasswordAsync(
-            GetCurrentUserId(),
-            request);
+        await _authService.ChangePasswordAsync(_currentUser.UserId, request);
+        return Ok(new { message = "Password was changed successfully." });
+    }
 
-        return NoContent();
+    [HttpPut("profile")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        var result = await _authService.UpdateProfileAsync(_currentUser.UserId, request);
+        return Ok(result);
     }
 
     [HttpPost("profile-image")]
     [Authorize]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> UploadProfileImage(
-        [FromForm] UploadProfileImageRequest request)
+    public async Task<IActionResult> UploadProfileImage([FromForm] UploadProfileImageRequest request)
     {
-        var url = await _authService.UploadProfileImageAsync(
-            GetCurrentUserId(),
-            request.File);
-
-        return Ok(new
-        {
-            profileImageUrl = url
-        });
+        var url = await _authService.UploadProfileImageAsync(_currentUser.UserId, request.File);
+        return Ok(new { profileImageUrl = url });
     }
 
     [HttpPut("profile-visibility")]
@@ -99,25 +110,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> UpdateProfileVisibility(
         [FromBody] UpdateProfileVisibilityRequest request)
     {
-        await _authService.UpdateProfilePublicAsync(
-            GetCurrentUserId(),
-            request.IsPublic);
-
-        return NoContent();
-    }
-
-    private int GetCurrentUserId()
-    {
-        var value = User.FindFirstValue(
-            ClaimTypes.NameIdentifier);
-
-        if (!int.TryParse(value, out var userId) ||
-            userId <= 0)
-        {
-            throw new UnauthorizedException(
-                "JWT token does not contain a valid user identifier.");
-        }
-
-        return userId;
+        await _authService.UpdateProfilePublicAsync(_currentUser.UserId, request.IsPublic);
+        return Ok(new { message = "Profile visibility was updated successfully." });
     }
 }

@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Progressio.Model.Exceptions;
 using Progressio.Model.Responses.StatsResponses;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using System;
 using System.Security.Claims;
@@ -13,31 +14,25 @@ namespace Progressio.WebApi.Controllers
     public class StatisticsController : ControllerBase
     {
         private readonly IStatisticsService _statisticsService;
+        private readonly IAppCurrentUserService _currentUser;
 
-        public StatisticsController(IStatisticsService statisticsService)
+        public StatisticsController(IStatisticsService statisticsService, IAppCurrentUserService currentUser)
         {
             _statisticsService = statisticsService;
-        }
-
-        private int GetUserId()
-        {
-            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(value, out var id) || id <= 0)
-                throw new UnauthorizedException("JWT token does not contain a valid user identifier.");
-            return id;
+            _currentUser = currentUser;
         }
 
         [HttpGet("api/stats/me")]
         public async Task<ActionResult<StatsResponse>> GetMyStats()
         {
-            var result = await _statisticsService.GetMyStatsAsync(GetUserId());
+            var result = await _statisticsService.GetMyStatsAsync(_currentUser.UserId);
             return Ok(result);
         }
 
         [HttpGet("api/stats/me/premium")]
         public async Task<ActionResult<PremiumStatsResponse>> GetMyPremiumStats()
         {
-            var result = await _statisticsService.GetMyPremiumStatsAsync(GetUserId());
+            var result = await _statisticsService.GetMyPremiumStatsAsync(_currentUser.UserId);
             return Ok(result);
         }
 
@@ -47,7 +42,7 @@ namespace Progressio.WebApi.Controllers
             if (year == 0)
                 year = DateTime.UtcNow.Year;
 
-            var result = await _statisticsService.GetWrappedAsync(GetUserId(), year);
+            var result = await _statisticsService.GetWrappedAsync(_currentUser.UserId, year);
             return Ok(result);
         }
     }

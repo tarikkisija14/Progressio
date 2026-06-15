@@ -55,22 +55,22 @@ class _SubscriptionListScreenState extends State<SubscriptionListScreen> {
           if (_filterStatus != null) 'status': _filterStatus,
         },
       );
-      setState(() => _result = result);
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       _showError(e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppColors.error),
     );
   }
 
-  int get _totalPages =>
-      ((_result?.totalCount ?? 0) / _pageSize).ceil();
+  int get _totalPages => ((_result?.totalCount ?? 0) / _pageSize).ceil();
 
   @override
   Widget build(BuildContext context) {
@@ -154,8 +154,7 @@ class _SubscriptionListScreenState extends State<SubscriptionListScreen> {
               .map((item) => DropdownMenuItem<T>(
                     value: item.value,
                     child: DefaultTextStyle(
-                      style: const TextStyle(
-                          color: AppColors.textSecondary),
+                      style: const TextStyle(color: AppColors.textSecondary),
                       child: item.child!,
                     ),
                   ))
@@ -264,8 +263,7 @@ class _SubscriptionListScreenState extends State<SubscriptionListScreen> {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(planType,
-          style:
-              const TextStyle(color: AppColors.premium, fontSize: 12)),
+          style: const TextStyle(color: AppColors.premium, fontSize: 12)),
     );
   }
 
@@ -303,18 +301,15 @@ class _SubscriptionListScreenState extends State<SubscriptionListScreen> {
               IconButton(
                 icon: const Icon(Icons.chevron_left,
                     color: AppColors.textSecondary),
-                onPressed:
-                    _page > 1 ? () => _search(page: _page - 1) : null,
+                onPressed: _page > 1 ? () => _search(page: _page - 1) : null,
               ),
               Text('Page $_page of $_totalPages',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary)),
+                  style: const TextStyle(color: AppColors.textSecondary)),
               IconButton(
                 icon: const Icon(Icons.chevron_right,
                     color: AppColors.textSecondary),
-                onPressed: _page < _totalPages
-                    ? () => _search(page: _page + 1)
-                    : null,
+                onPressed:
+                    _page < _totalPages ? () => _search(page: _page + 1) : null,
               ),
             ],
           ),

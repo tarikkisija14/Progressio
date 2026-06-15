@@ -1,6 +1,7 @@
 ﻿using Progressio.Model.Messages;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 
@@ -10,6 +11,7 @@ namespace Progressio.Worker.Consumers
     {
         private readonly ILogger<NotificationConsumer> _logger;
         private readonly IConfiguration _configuration;
+        private readonly IHttpClientFactory _httpClientFactory;
 
         private IConnection? _connection;
         private IChannel? _channel;
@@ -21,10 +23,12 @@ namespace Progressio.Worker.Consumers
 
         public NotificationConsumer(
             ILogger<NotificationConsumer> logger,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IHttpClientFactory httpClientFactory)
         {
             _logger = logger;
             _configuration = configuration;
+            _httpClientFactory = httpClientFactory;
         }
 
         public override async Task StartAsync(CancellationToken cancellationToken)
@@ -83,9 +87,9 @@ namespace Progressio.Worker.Consumers
 
                 try
                 {
-                    var message = JsonSerializer.Deserialize<SendNotificationMessage>(json);
-                    if (message is not null)
-                        await ProcessAsync(message, stoppingToken);
+                    var message = JsonSerializer.Deserialize<SendNotificationMessage>(json)
+                        ?? throw new InvalidOperationException("Invalid notification message payload.");
+                    await ProcessAsync(message, stoppingToken);
 
                     await _channel!.BasicAckAsync(ea.DeliveryTag, false, stoppingToken);
                 }
@@ -139,22 +143,6 @@ namespace Progressio.Worker.Consumers
 
         private async Task PushViaApiAsync(SendNotificationMessage message, CancellationToken ct)
         {
-            var apiBaseUrl = _configuration["Api:BaseUrl"];
-            if (string.IsNullOrWhiteSpace(apiBaseUrl))
-            {
-                _logger.LogWarning("Api:BaseUrl is not configured � SignalR push skipped for User {UserId}", message.UserId);
-                return;
-            }
-
-            var internalKey = _configuration["Api:InternalKey"];
-            if (string.IsNullOrWhiteSpace(internalKey))
-            {
-                _logger.LogWarning("Api:InternalKey is not configured � SignalR push skipped for User {UserId}", message.UserId);
-                return;
-            }
-
-            var endpoint = $"{apiBaseUrl.TrimEnd('/')}/api/internal/notify";
-
             var payload = new
             {
                 userId = message.UserId,
@@ -165,28 +153,21 @@ namespace Progressio.Worker.Consumers
             };
 
             var json = JsonSerializer.Serialize(payload);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var httpClient = _httpClientFactory.CreateClient("ProgressioInternalApi");
+            using var response = await httpClient.PostAsync("api/internal/notify", content, ct);
 
-            using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Add("X-Internal-Key", internalKey);
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync(ct);
+                throw new HttpRequestException(
+                    $"Internal notification endpoint returned {(int)response.StatusCode}: {responseBody}");
+            }
 
-            try
-            {
-                var response = await httpClient.PostAsync(endpoint, content, ct);
-                if (response.IsSuccessStatusCode)
-                {
-                    _logger.LogInformation("SignalR push completed for User {UserId}: {Title}", message.UserId, message.Title);
-                }
-                else
-                {
-                    _logger.LogWarning("Internal notify endpoint returned {StatusCode} for User {UserId}",
-                        response.StatusCode, message.UserId);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to call internal notify endpoint for User {UserId} � notification was already saved to DB", message.UserId);
-            }
+            _logger.LogInformation(
+                "SignalR push completed for User {UserId}: {Title}",
+                message.UserId,
+                message.Title);
         }
 
         public override async Task StopAsync(CancellationToken cancellationToken)

@@ -101,7 +101,9 @@ namespace Progressio.Services.Services
             };
         }
 
-        public async Task<List<CalendarItemResponse>> GetTodayAsync(int userId)
+        public async Task<PagedResult<CalendarItemResponse>> GetTodayAsync(
+            int userId,
+            BaseSearchObject search)
         {
             var today = DateTime.UtcNow.Date;
             var tomorrow = today.AddDays(1);
@@ -112,9 +114,6 @@ namespace Progressio.Services.Services
                 .ToListAsync();
 
             var episodes = await _db.Episodes
-                .Include(e => e.Season)
-                    .ThenInclude(s => s.Content)
-                        .ThenInclude(c => c.ContentType)
                 .Where(e => e.AirDate >= today && e.AirDate < tomorrow
                          && inProgressContentIds.Contains(e.Season.ContentId))
                 .Select(e => new CalendarItemResponse
@@ -134,8 +133,6 @@ namespace Progressio.Services.Services
                 .ToListAsync();
 
             var chapters = await _db.Chapters
-                .Include(c => c.Content)
-                    .ThenInclude(ct => ct.ContentType)
                 .Where(c => c.ReleaseDate.HasValue
                          && c.ReleaseDate.Value >= today && c.ReleaseDate.Value < tomorrow
                          && inProgressContentIds.Contains(c.ContentId))
@@ -155,10 +152,21 @@ namespace Progressio.Services.Services
                 })
                 .ToListAsync();
 
-            return episodes.Concat(chapters)
+            var allItems = episodes.Concat(chapters)
                 .OrderBy(x => x.AirDate)
                 .ThenBy(x => x.ContentTitle)
                 .ToList();
+
+            return new PagedResult<CalendarItemResponse>
+            {
+                Items = allItems
+                    .Skip((search.Page - 1) * search.PageSize)
+                    .Take(search.PageSize)
+                    .ToList(),
+                TotalCount = allItems.Count,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
         }
 
         public async Task<PagedResult<CalendarItemResponse>> GetMonthAsync(int userId, int year, int month, BaseSearchObject search)

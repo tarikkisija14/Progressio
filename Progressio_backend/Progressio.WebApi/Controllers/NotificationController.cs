@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.SignalR;
 using Progressio.Model.Requests.NotificationRequests;
 using Progressio.Model.Responses.NotificationResponses;
 using Progressio.Model.SearchObjects;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using Progressio.WebApi.Hubs;
+using Progressio.WebApi.Security;
 using System.Security.Claims;
 
 namespace Progressio.WebApi.Controllers
@@ -15,27 +17,27 @@ namespace Progressio.WebApi.Controllers
     {
         private readonly INotificationService _notificationService;
         private readonly IHubContext<NotificationHub> _hubContext;
+        private readonly IAppCurrentUserService _currentUser;
         private readonly ILogger<NotificationController> _logger;
 
         public NotificationController(
             INotificationService notificationService,
             IHubContext<NotificationHub> hubContext,
+            IAppCurrentUserService currentUser,
             ILogger<NotificationController> logger)
         {
             _notificationService = notificationService;
             _hubContext = hubContext;
+            _currentUser = currentUser;
             _logger = logger;
         }
-
-        private int GetUserId() =>
-            int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
         [HttpGet("api/notifications")]
         [Authorize]
         public async Task<ActionResult<PagedResult<NotificationResponse>>> GetNotifications(
             [FromQuery] NotificationSearchObject search)
         {
-            var result = await _notificationService.GetNotificationsAsync(GetUserId(), search);
+            var result = await _notificationService.GetNotificationsAsync(_currentUser.UserId, search);
             return Ok(result);
         }
 
@@ -43,12 +45,12 @@ namespace Progressio.WebApi.Controllers
         [Authorize]
         public async Task<IActionResult> MarkAsRead(int id)
         {
-            await _notificationService.MarkAsReadAsync(GetUserId(), id);
-            return NoContent();
+            await _notificationService.MarkAsReadAsync(_currentUser.UserId, id);
+            return Ok(new { message = "Notification was marked as read." });
         }
 
         [HttpPost("api/internal/notify")]
-        [AllowAnonymous]
+        [Authorize(AuthenticationSchemes = InternalApiKeyDefaults.Scheme)]
         public async Task<IActionResult> InternalPush([FromBody] InternalPushRequest request)
         {
             await _notificationService.PushAndSaveAsync(request);

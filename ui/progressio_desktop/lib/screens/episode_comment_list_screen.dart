@@ -45,8 +45,8 @@ class _EpisodeCommentListScreenState extends State<EpisodeCommentListScreen> {
 
   Future<void> _loadContents() async {
     try {
-      final result = await _contentProvider.get(filter: {'pageSize': 200});
-      setState(() => _contents = result.items ?? []);
+      final items = await _contentProvider.getAll();
+      if (mounted) setState(() => _contents = items);
     } catch (e) {
       _showError(e.toString());
     }

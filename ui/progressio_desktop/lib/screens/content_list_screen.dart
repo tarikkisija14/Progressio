@@ -47,12 +47,15 @@ class _ContentListScreenState extends State<ContentListScreen> {
   Future<void> _loadInitial() async {
     try {
       final types = await _contentTypeProvider.get();
-      _contentTypes = types.items ?? [];
-    } catch (_) {}
-    await _search();
+      if (mounted) setState(() => _contentTypes = types.items ?? []);
+    } catch (error) {
+      _showError('Could not load content types: $error');
+    }
+    if (mounted) await _search();
   }
 
   Future<void> _search({int page = 1}) async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _page = page;
@@ -67,15 +70,16 @@ class _ContentListScreenState extends State<ContentListScreen> {
           'contentTypeId': _selectedContentTypeId,
       };
       final result = await _contentProvider.get(filter: filter);
-      setState(() => _result = result);
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       _showError(e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
   }
@@ -85,7 +89,7 @@ class _ContentListScreenState extends State<ContentListScreen> {
       context,
       MaterialPageRoute(builder: (_) => ContentFormScreen(content: content)),
     );
-    _search(page: _page);
+    if (mounted) _search(page: _page);
   }
 
   int get _totalPages => ((_result?.totalCount ?? 0) / _pageSize).ceil();
@@ -322,7 +326,8 @@ class _ContentListScreenState extends State<ContentListScreen> {
           Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.chevron_left, color: AppColors.textSecondary),
+                icon: const Icon(Icons.chevron_left,
+                    color: AppColors.textSecondary),
                 onPressed: _page > 1 ? () => _search(page: _page - 1) : null,
               ),
               Text('Page $_page of $_totalPages',

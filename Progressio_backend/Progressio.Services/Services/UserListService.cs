@@ -189,6 +189,51 @@ namespace Progressio.Services.Services
                 PageSize = pageSize
             };
         }
+        public async Task<PagedResult<UserListMemberResponse>> GetMembersAsync(
+            int listId,
+            int currentUserId,
+            BaseSearchObject search)
+        {
+            var list = await _db.UserLists
+                .AsNoTracking()
+                .Include(l => l.Members)
+                .FirstOrDefaultAsync(l => l.Id == listId)
+                ?? throw new NotFoundException("List", listId);
+
+            var canView = list.IsPublic ||
+                          list.UserId == currentUserId ||
+                          list.Members.Any(m => m.UserId == currentUserId);
+            if (!canView)
+                throw new ForbiddenException("You do not have permission to view members of this list.");
+
+            var membersQuery = _db.UserListMembers
+                .AsNoTracking()
+                .Where(m => m.UserListId == listId);
+
+            var totalCount = await membersQuery.CountAsync();
+            var items = await membersQuery
+                .OrderBy(m => m.JoinedAt)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
+                .Select(m => new UserListMemberResponse
+                {
+                    UserId = m.UserId,
+                    Username = m.User.UserName!,
+                    ProfileImageUrl = m.User.ProfileImageUrl,
+                    CanEdit = m.CanEdit,
+                    JoinedAt = m.JoinedAt
+                })
+                .ToListAsync();
+
+            return new PagedResult<UserListMemberResponse>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
+        }
+
         public async Task<UserListResponse> CreateListAsync(int currentUserId, UserListInsertRequest request)
         {
             var validation = await _insertValidator.ValidateAsync(request);
@@ -342,6 +387,8 @@ namespace Progressio.Services.Services
             if (!source.IsPublic)
                 throw new BusinessException("Fork is only available for public lists.");
 
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+
             var forked = new UserList
             {
                 UserId = currentUserId,
@@ -366,6 +413,7 @@ namespace Progressio.Services.Services
 
             _db.UserListItems.AddRange(itemsCopy);
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             _logger.LogInformation("User {UserId} forked list {SourceId} -> {NewId}", currentUserId, listId, forked.Id);
 
@@ -413,7 +461,7 @@ namespace Progressio.Services.Services
             await _db.SaveChangesAsync();
 
             var inviter = await _db.Users.FirstOrDefaultAsync(u => u.Id == currentUserId);
-            _publisher.Publish(ListInviteQueue, new ListInviteMessage
+            await _publisher.PublishAsync(ListInviteQueue, new ListInviteMessage
             {
                 InviteeUserId = inviteeUserId,
                 InviterUserId = currentUserId,

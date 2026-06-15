@@ -110,3 +110,55 @@ class AppShellBackground extends StatelessWidget {
     );
   }
 }
+
+Future<bool> showDeleteConfirmation(
+  BuildContext context, {
+  required String itemName,
+  String? warning,
+}) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Confirm deletion'),
+      content: Text(
+        warning ??
+            'Delete "$itemName"? This action cannot be undone when the record is not referenced by other data.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+
+  return confirmed == true;
+}
+
+/// Reusable helper: prikazuje error SnackBar samo ako je widget još aktivan.
+void showErrorSnackBar(BuildContext context, Object error) {
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(error.toString()),
+      backgroundColor: AppColors.error,
+    ),
+  );
+}
+
+/// Reusable helper: prikazuje success SnackBar samo ako je widget još aktivan.
+void showSuccessSnackBar(BuildContext context, String message) {
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      backgroundColor: AppColors.success,
+    ),
+  );
+}

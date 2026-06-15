@@ -44,7 +44,7 @@ class _ReportScreenState extends State<ReportScreen> {
           bytes = await _reportProvider.downloadUpcomingReleasesReport();
           break;
         default:
-          throw Exception('Unknown report key');
+          throw ArgumentError.value(key, 'key', 'Unknown report key.');
       }
       await _saveFile(bytes, fileName);
     } catch (e) {
@@ -90,16 +90,23 @@ class _ReportScreenState extends State<ReportScreen> {
     return '/tmp';
   }
 
-  void _openFile(String path) {
+  Future<void> _openFile(String path) async {
     try {
+      late ProcessResult result;
       if (Platform.isWindows) {
-        Process.run('cmd', ['/c', 'start', '', path]);
+        result = await Process.run('cmd', ['/c', 'start', '', path]);
       } else if (Platform.isMacOS) {
-        Process.run('open', [path]);
+        result = await Process.run('open', [path]);
       } else {
-        Process.run('xdg-open', [path]);
+        result = await Process.run('xdg-open', [path]);
       }
-    } catch (_) {}
+
+      if (result.exitCode != 0) {
+        _showError('The report was saved, but it could not be opened automatically.');
+      }
+    } catch (error) {
+      _showError('The report was saved, but it could not be opened: $error');
+    }
   }
 
   void _showError(String msg) {

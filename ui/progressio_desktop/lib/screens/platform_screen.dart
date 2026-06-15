@@ -7,6 +7,7 @@ import 'package:progressio_desktop/model/platform.dart';
 import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/platform_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class PlatformScreen extends StatefulWidget {
   const PlatformScreen({super.key});
@@ -53,21 +54,23 @@ class _PlatformScreenState extends State<PlatformScreen> {
             'name': _searchController.text.trim(),
         },
       );
-      setState(() => _result = result);
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       _showError(e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppColors.error),
     );
   }
 
   void _showSuccess(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppColors.success),
     );
@@ -78,7 +81,7 @@ class _PlatformScreenState extends State<PlatformScreen> {
 
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.card,
         title: Text(
           platform == null ? 'Add Platform' : 'Edit Platform',
@@ -106,7 +109,7 @@ class _PlatformScreenState extends State<PlatformScreen> {
           if (platform != null)
             TextButton.icon(
               onPressed: () async {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 await _delete(platform);
               },
               icon: const Icon(Icons.delete, color: AppColors.error, size: 18),
@@ -114,7 +117,7 @@ class _PlatformScreenState extends State<PlatformScreen> {
                   style: TextStyle(color: AppColors.error)),
             ),
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel',
                 style: TextStyle(color: AppColors.textMuted)),
           ),
@@ -122,7 +125,7 @@ class _PlatformScreenState extends State<PlatformScreen> {
             onPressed: () async {
               if (formKey.currentState?.saveAndValidate() ?? false) {
                 final values = formKey.currentState!.value;
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 await _save(platform, values);
               }
             },
@@ -143,7 +146,7 @@ class _PlatformScreenState extends State<PlatformScreen> {
         await _platformProvider.update(existing.id, request);
         _showSuccess('Platform updated successfully.');
       }
-      _search(page: _page);
+      if (mounted) _search(page: _page);
     } catch (e) {
       _showError(e.toString());
     }
@@ -152,7 +155,7 @@ class _PlatformScreenState extends State<PlatformScreen> {
   Future<void> _delete(Platform platform) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.card,
         title: const Text('Delete Platform',
             style: TextStyle(color: AppColors.textPrimary)),
@@ -162,14 +165,13 @@ class _PlatformScreenState extends State<PlatformScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel',
                 style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style:
-                ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -179,15 +181,14 @@ class _PlatformScreenState extends State<PlatformScreen> {
       try {
         await _platformProvider.delete(platform.id);
         _showSuccess('Platform deleted.');
-        _search(page: _page);
+        if (mounted) _search(page: _page);
       } catch (e) {
         _showError(e.toString());
       }
     }
   }
 
-  int get _totalPages =>
-      ((_result?.totalCount ?? 0) / _pageSize).ceil();
+  int get _totalPages => ((_result?.totalCount ?? 0) / _pageSize).ceil();
 
   @override
   Widget build(BuildContext context) {
@@ -267,7 +268,6 @@ class _PlatformScreenState extends State<PlatformScreen> {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: const [
-            DataColumn(label: Text('ID')),
             DataColumn(label: Text('Name')),
             DataColumn(label: Text('Actions')),
           ],
@@ -280,8 +280,6 @@ class _PlatformScreenState extends State<PlatformScreen> {
   DataRow _buildRow(Platform p) {
     return DataRow(
       cells: [
-        DataCell(Text(p.id.toString(),
-            style: const TextStyle(color: AppColors.textMuted))),
         DataCell(
           Text(p.name,
               style: const TextStyle(
@@ -292,14 +290,12 @@ class _PlatformScreenState extends State<PlatformScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                icon: const Icon(Icons.edit,
-                    color: AppColors.primary, size: 18),
+                icon: const Icon(Icons.edit, color: AppColors.primary, size: 18),
                 tooltip: 'Edit',
                 onPressed: () => _openDialog(platform: p),
               ),
               IconButton(
-                icon: const Icon(Icons.delete,
-                    color: AppColors.error, size: 18),
+                icon: const Icon(Icons.delete, color: AppColors.error, size: 18),
                 tooltip: 'Delete',
                 onPressed: () => _delete(p),
               ),
@@ -326,17 +322,15 @@ class _PlatformScreenState extends State<PlatformScreen> {
               IconButton(
                 icon: const Icon(Icons.chevron_left,
                     color: AppColors.textSecondary),
-                onPressed:
-                    _page > 1 ? () => _search(page: _page - 1) : null,
+                onPressed: _page > 1 ? () => _search(page: _page - 1) : null,
               ),
               Text('Page $_page of $_totalPages',
                   style: const TextStyle(color: AppColors.textSecondary)),
               IconButton(
                 icon: const Icon(Icons.chevron_right,
                     color: AppColors.textSecondary),
-                onPressed: _page < _totalPages
-                    ? () => _search(page: _page + 1)
-                    : null,
+                onPressed:
+                    _page < _totalPages ? () => _search(page: _page + 1) : null,
               ),
             ],
           ),

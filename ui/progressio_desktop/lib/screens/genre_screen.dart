@@ -7,6 +7,7 @@ import 'package:progressio_desktop/model/genre.dart';
 import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/genre_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class GenreScreen extends StatefulWidget {
   const GenreScreen({super.key});
@@ -53,15 +54,16 @@ class _GenreScreenState extends State<GenreScreen> {
             'name': _searchController.text.trim(),
         },
       );
-      setState(() => _result = result);
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       _showError(e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppColors.error),
     );
@@ -72,7 +74,7 @@ class _GenreScreenState extends State<GenreScreen> {
 
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.card,
         title: Text(
           genre == null ? 'Add Genre' : 'Edit Genre',
@@ -93,41 +95,38 @@ class _GenreScreenState extends State<GenreScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel',
                 style: TextStyle(color: AppColors.textMuted)),
           ),
           if (genre != null)
             ElevatedButton(
               onPressed: () async {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 await _delete(genre);
               },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.error),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
               child: const Text('Delete'),
             ),
           ElevatedButton(
             onPressed: () async {
-              if (!(formKey.currentState?.saveAndValidate() ?? false))
-                return;
-              final values = Map<String, dynamic>.from(
-                  formKey.currentState!.value);
-              Navigator.pop(context);
+              if (!(formKey.currentState?.saveAndValidate() ?? false)) return;
+              final values =
+                  Map<String, dynamic>.from(formKey.currentState!.value);
+              Navigator.pop(dialogContext);
               try {
                 if (genre == null) {
                   await _genreProvider.insert(values);
                 } else {
                   await _genreProvider.update(genre.id, values);
                 }
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(
-                      genre == null ? 'Genre created.' : 'Genre updated.'),
-                  backgroundColor: AppColors.success,
-                ));
-                _search(page: _page);
+                showSuccessSnackBar(
+                  context,
+                  genre == null ? 'Genre created.' : 'Genre updated.',
+                );
+                if (mounted) _search(page: _page);
               } catch (e) {
-                _showError(e.toString());
+                showErrorSnackBar(context, e);
               }
             },
             child: Text(genre == null ? 'Create' : 'Update'),
@@ -138,21 +137,17 @@ class _GenreScreenState extends State<GenreScreen> {
   }
 
   Future<void> _delete(Genre genre) async {
+    if (!await showDeleteConfirmation(context, itemName: genre.name)) return;
     try {
       await _genreProvider.delete(genre.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Genre deleted.'),
-            backgroundColor: AppColors.error),
-      );
-      _search(page: _page);
+      showSuccessSnackBar(context, 'Genre deleted.');
+      if (mounted) _search(page: _page);
     } catch (e) {
-      _showError(e.toString());
+      showErrorSnackBar(context, e);
     }
   }
 
-  int get _totalPages =>
-      ((_result?.totalCount ?? 0) / _pageSize).ceil();
+  int get _totalPages => ((_result?.totalCount ?? 0) / _pageSize).ceil();
 
   @override
   Widget build(BuildContext context) {
@@ -180,8 +175,7 @@ class _GenreScreenState extends State<GenreScreen> {
               style: const TextStyle(color: AppColors.textPrimary),
               decoration: const InputDecoration(
                 hintText: 'Search genres...',
-                prefixIcon:
-                    Icon(Icons.search, color: AppColors.textMuted),
+                prefixIcon: Icon(Icons.search, color: AppColors.textMuted),
               ),
               onSubmitted: (_) => _search(),
             ),
@@ -197,8 +191,7 @@ class _GenreScreenState extends State<GenreScreen> {
             onPressed: () => _openDialog(),
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Add Genre'),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
           ),
         ],
       ),
@@ -223,9 +216,8 @@ class _GenreScreenState extends State<GenreScreen> {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: const [
-            DataColumn(label: Text('ID')),
             DataColumn(label: Text('Name')),
-            DataColumn(label: Text('')),
+            DataColumn(label: Text('Actions')),
           ],
           rows: items.map((g) => _buildRow(g)).toList(),
         ),
@@ -236,16 +228,13 @@ class _GenreScreenState extends State<GenreScreen> {
   DataRow _buildRow(Genre g) {
     return DataRow(
       cells: [
-        DataCell(Text('#${g.id}',
-            style: const TextStyle(color: AppColors.textMuted))),
         DataCell(Text(g.name,
             style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w500))),
         DataCell(
           IconButton(
-            icon: const Icon(Icons.edit,
-                color: AppColors.primary, size: 18),
+            icon: const Icon(Icons.edit, color: AppColors.primary, size: 18),
             tooltip: 'Edit',
             onPressed: () => _openDialog(genre: g),
           ),
@@ -269,18 +258,15 @@ class _GenreScreenState extends State<GenreScreen> {
               IconButton(
                 icon: const Icon(Icons.chevron_left,
                     color: AppColors.textSecondary),
-                onPressed:
-                    _page > 1 ? () => _search(page: _page - 1) : null,
+                onPressed: _page > 1 ? () => _search(page: _page - 1) : null,
               ),
               Text('Page $_page of $_totalPages',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary)),
+                  style: const TextStyle(color: AppColors.textSecondary)),
               IconButton(
                 icon: const Icon(Icons.chevron_right,
                     color: AppColors.textSecondary),
-                onPressed: _page < _totalPages
-                    ? () => _search(page: _page + 1)
-                    : null,
+                onPressed:
+                    _page < _totalPages ? () => _search(page: _page + 1) : null,
               ),
             ],
           ),

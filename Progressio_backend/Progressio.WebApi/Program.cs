@@ -1,9 +1,9 @@
 ﻿using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
-using Progressio.WebApi.Infrastructure;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -19,20 +19,50 @@ using Progressio.Model.Requests.ProgressRequests;
 using Progressio.Model.Requests.ReviewRequests;
 using Progressio.Model.Requests.VoteRequests;
 using Progressio.Services;
+using Progressio.Services.Configuration;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using Progressio.Services.Services.Validators;
+using Progressio.WebApi.Filters;
 using Progressio.WebApi.Hubs;
+using Progressio.WebApi.Infrastructure;
 using Progressio.WebApi.Middleware;
+using Progressio.WebApi.Security;
 using Stripe;
+using System.Security.Claims;
 using System.Text;
 
+// ─── Load .env files BEFORE building the host ────────────────────────────────
+var root = Path.Combine(Directory.GetCurrentDirectory(), "..");
+DotNetEnv.Env.Load(Path.Combine(root, ".env"));
+var localEnv = Path.Combine(root, ".env.local");
+if (System.IO.File.Exists(localEnv))
+    DotNetEnv.Env.Load(localEnv);
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddEnvironmentVariables();
 
 // ─── DbContext ───────────────────────────────────────────────────────────────
+var connectionString = builder.Configuration.GetConnectionString("Default");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    var dbName = Environment.GetEnvironmentVariable("DB_NAME")
+        ?? throw new InvalidOperationException("DB_NAME is not configured.");
+
+    var dbPassword = Environment.GetEnvironmentVariable("DB_PASSWORD")
+        ?? throw new InvalidOperationException("DB_PASSWORD is not configured.");
+
+    var sqlServerPort = Environment.GetEnvironmentVariable("SQLSERVER_PORT") ?? "1433";
+
+    connectionString =
+        $"Server=localhost,{sqlServerPort};Database={dbName};User Id=sa;Password={dbPassword};MultipleActiveResultSets=true;TrustServerCertificate=True";
+}
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+    options.UseSqlServer(connectionString));
 
 // ─── ASP.NET Identity ────────────────────────────────────────────────────────
 builder.Services.AddIdentity<AppUser, IdentityRole<int>>(options =>
@@ -45,10 +75,14 @@ builder.Services.AddIdentity<AppUser, IdentityRole<int>>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
+builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
+    options.TokenLifespan = TimeSpan.FromMinutes(30));
+
 // ─── JWT Authentication ───────────────────────────────────────────────────────
-var jwtSettings = builder.Configuration.GetSection("Jwt");
-var jwtKey = jwtSettings["Key"]
-    ?? throw new InvalidOperationException("JWT Key is not configured.");
+var jwtKey = builder.Configuration.GetRequiredValue("Jwt:Key");
+var jwtIssuer = builder.Configuration.GetRequiredValue("Jwt:Issuer");
+var jwtAudience = builder.Configuration.GetRequiredValue("Jwt:Audience");
+var tokenHashKey = builder.Configuration.GetRequiredValue("Security:TokenHashKey");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -63,13 +97,12 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings["Issuer"],
-        ValidAudience = jwtSettings["Audience"],
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ClockSkew = TimeSpan.Zero
     };
 
-    // JWT from query string for SignalR WebSocket connections
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
@@ -79,70 +112,69 @@ builder.Services.AddAuthentication(options =>
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
                 context.Token = accessToken;
             return Task.CompletedTask;
+        },
+        OnTokenValidated = async context =>
+        {
+            var userIdValue = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+            var securityStamp = context.Principal?.FindFirstValue(SecurityClaimNames.SecurityStamp);
+
+            if (!int.TryParse(userIdValue, out var userId) || string.IsNullOrWhiteSpace(securityStamp))
+            {
+                context.Fail("JWT token does not contain the required security claims.");
+                return;
+            }
+
+            var userManager = context.HttpContext.RequestServices.GetRequiredService<UserManager<AppUser>>();
+            var user = await userManager.FindByIdAsync(userId.ToString());
+            var currentSecurityStamp = user is null ? null : await userManager.GetSecurityStampAsync(user);
+
+            if (user is null || !user.IsActive ||
+                !string.Equals(securityStamp, currentSecurityStamp, StringComparison.Ordinal))
+            {
+                context.Fail("JWT token has been invalidated.");
+            }
         }
     };
-});
-
+})
+.AddScheme<AuthenticationSchemeOptions, InternalApiKeyAuthenticationHandler>(
+    InternalApiKeyDefaults.Scheme, _ => { })
+.AddScheme<AuthenticationSchemeOptions, StripeWebhookAuthenticationHandler>(
+    StripeWebhookAuthenticationDefaults.Scheme, _ => { });
 
 builder.Services.AddAuthorization();
 
-StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"]
-    ?? throw new InvalidOperationException("Stripe SecretKey is not configured.");
+StripeConfiguration.ApiKey = builder.Configuration.GetRequiredValue("Stripe:SecretKey");
 
 // ─── Validators ──────────────────────────────────────────────────────────────
-// Auth
 builder.Services.AddScoped<IValidator<RegisterRequest>, RegisterRequestValidator>();
 builder.Services.AddScoped<IValidator<ChangePasswordRequest>, ChangePasswordRequestValidator>();
-
-// Content
+builder.Services.AddScoped<IValidator<ForgotPasswordRequest>, ForgotPasswordRequestValidator>();
+builder.Services.AddScoped<IValidator<ResetPasswordRequest>, ResetPasswordRequestValidator>();
+builder.Services.AddScoped<IValidator<UpdateProfileRequest>, UpdateProfileRequestValidator>();
 builder.Services.AddScoped<IValidator<ContentInsertRequest>, ContentInsertValidator>();
 builder.Services.AddScoped<IValidator<ContentUpdateRequest>, ContentUpdateValidator>();
-
-// Genre
 builder.Services.AddScoped<IValidator<GenreInsertRequest>, GenreInsertValidator>();
 builder.Services.AddScoped<IValidator<GenreUpdateRequest>, GenreUpdateValidator>();
-
-// ContentType
 builder.Services.AddScoped<IValidator<ContentTypeInsertRequest>, ContentTypeInsertValidator>();
 builder.Services.AddScoped<IValidator<ContentTypeUpdateRequest>, ContentTypeUpdateValidator>();
-
-// AgeRating
 builder.Services.AddScoped<IValidator<AgeRatingInsertRequest>, AgeRatingInsertValidator>();
 builder.Services.AddScoped<IValidator<AgeRatingUpdateRequest>, AgeRatingUpdateValidator>();
-
-// Language
 builder.Services.AddScoped<IValidator<LanguageInsertRequest>, LanguageInsertValidator>();
 builder.Services.AddScoped<IValidator<LanguageUpdateRequest>, LanguageUpdateValidator>();
-
-// Platform
 builder.Services.AddScoped<IValidator<PlatformInsertRequest>, PlatformInsertValidator>();
 builder.Services.AddScoped<IValidator<PlatformUpdateRequest>, PlatformUpdateValidator>();
-
-// Country
 builder.Services.AddScoped<IValidator<CountryInsertRequest>, CountryInsertValidator>();
 builder.Services.AddScoped<IValidator<CountryUpdateRequest>, CountryUpdateValidator>();
-
-// City
 builder.Services.AddScoped<IValidator<CityInsertRequest>, CityInsertValidator>();
 builder.Services.AddScoped<IValidator<CityUpdateRequest>, CityUpdateValidator>();
-
-// Season
 builder.Services.AddScoped<IValidator<SeasonInsertRequest>, SeasonInsertValidator>();
 builder.Services.AddScoped<IValidator<SeasonUpdateRequest>, SeasonUpdateValidator>();
-
-// Episode
 builder.Services.AddScoped<IValidator<EpisodeInsertRequest>, EpisodeInsertValidator>();
 builder.Services.AddScoped<IValidator<EpisodeUpdateRequest>, EpisodeUpdateValidator>();
-
-// Chapter
 builder.Services.AddScoped<IValidator<ChapterInsertRequest>, ChapterInsertValidator>();
 builder.Services.AddScoped<IValidator<ChapterUpdateRequest>, ChapterUpdateValidator>();
-
-// Character
 builder.Services.AddScoped<IValidator<CharacterInsertRequest>, CharacterInsertValidator>();
 builder.Services.AddScoped<IValidator<CharacterUpdateRequest>, CharacterUpdateValidator>();
-
-// Progress
 builder.Services.AddScoped<IValidator<StartProgressRequest>, StartProgressRequestValidator>();
 builder.Services.AddScoped<IValidator<ChangeStatusRequest>, ChangeStatusRequestValidator>();
 builder.Services.AddScoped<IValidator<MarkEpisodeRequest>, MarkEpisodeRequestValidator>();
@@ -157,10 +189,13 @@ builder.Services.AddScoped<IValidator<LoginRequest>, LoginRequestValidator>();
 builder.Services.AddScoped<IValidator<CommentInsertRequest>, CommentInsertValidator>();
 builder.Services.AddScoped<IValidator<CreatePaymentIntentRequest>, CreatePaymentIntentRequestValidator>();
 builder.Services.AddScoped<IValidator<RefundRequest>, RefundRequestValidator>();
-
-
+builder.Services.AddScoped<IValidator<UserListInsertRequest>, UserListInsertValidator>();
+builder.Services.AddScoped<IValidator<UserListUpdateRequest>, UserListUpdateValidator>();
+builder.Services.AddScoped<IValidator<UserListItemInsertRequest>, UserListItemInsertValidator>();
 
 // ─── Services ─────────────────────────────────────────────────────────────────
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IAppCurrentUserService, AppCurrentUserService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IContentService, ContentService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
@@ -174,85 +209,90 @@ builder.Services.AddScoped<ISeasonService, SeasonService>();
 builder.Services.AddScoped<IEpisodeService, EpisodeService>();
 builder.Services.AddScoped<IChapterService, ChapterService>();
 builder.Services.AddScoped<ICharacterService, CharacterService>();
-
-
 builder.Services.AddScoped<IStateMachineService, StateMachineService>();
 builder.Services.AddScoped<IProgressService, ProgressService>();
-
 builder.Services.AddScoped<IReviewService, Progressio.Services.Services.ReviewService>();
 builder.Services.AddScoped<ICharacterVoteService, CharacterVoteService>();
-
 builder.Services.AddScoped<ICommentService, CommentService>();
 builder.Services.AddScoped<IFollowService, FollowService>();
 builder.Services.AddScoped<IFeedService, FeedService>();
-
 builder.Services.AddScoped<ISearchLogService, SearchLogService>();
-
-
-builder.Services.AddScoped<IValidator<UserListInsertRequest>, UserListInsertValidator>();
-builder.Services.AddScoped<IValidator<UserListUpdateRequest>, UserListUpdateValidator>();
-builder.Services.AddScoped<IValidator<UserListItemInsertRequest>, UserListItemInsertValidator>();
 builder.Services.AddScoped<IUserListService, UserListService>();
 builder.Services.AddScoped<IAchievementService, AchievementService>();
-
 builder.Services.AddScoped<ICalendarService, CalendarService>();
-
 builder.Services.AddScoped<IStatisticsService, StatisticsService>();
 builder.Services.AddScoped<IRecommenderService, RecommenderService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IExportService, ExportService>();
-
-// ─── Notification Service  ─────────────────────────────────────────
 builder.Services.AddScoped<INotificationService, NotificationService>();
-
-// ─── Admin & Report Services  ──────────────────────────────────────
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 
 builder.Services.AddMemoryCache();
 
-// ─── DataProtection — persist keys to mounted volume ─────────────────────────
-// PersistKeysToFileSystem sprjecava gubitak kljuceva pri restartu kontejnera.
-// NullXmlEncryptor eliminise warning "No XML encryptor configured" —
-// na Linuxu u Dockeru DPAPI nije dostupan, a certifikat nije potreban jer
-// je volume zaštićen na nivou Docker mreze.
+// ─── Configured storage paths ────────────────────────────────────────────────
+static string ResolveConfiguredPath(string contentRootPath, string configuredPath)
+{
+    return Path.IsPathRooted(configuredPath)
+        ? Path.GetFullPath(configuredPath)
+        : Path.GetFullPath(Path.Combine(contentRootPath, configuredPath));
+}
+
+var dataProtectionKeysPath = ResolveConfiguredPath(
+    builder.Environment.ContentRootPath,
+    builder.Configuration.GetRequiredValue("DataProtection:KeysPath"));
+var webRootPath = ResolveConfiguredPath(
+    builder.Environment.ContentRootPath,
+    builder.Configuration.GetRequiredValue("Storage:WebRootPath"));
+var profileUploadPath = ResolveConfiguredPath(
+    builder.Environment.ContentRootPath,
+    builder.Configuration.GetRequiredValue("Storage:ProfileUploadPath"));
+
+Directory.CreateDirectory(dataProtectionKeysPath);
+Directory.CreateDirectory(webRootPath);
+Directory.CreateDirectory(profileUploadPath);
+builder.Environment.WebRootPath = webRootPath;
+builder.Configuration["UploadPath"] = profileUploadPath;
+
 builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo("/root/.aspnet/DataProtection-Keys"))
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
     .UseCustomCryptographicAlgorithms(new ManagedAuthenticatedEncryptorConfiguration())
     .Services.AddSingleton<Microsoft.AspNetCore.DataProtection.XmlEncryption.IXmlEncryptor, NullXmlEncryptor>();
 
-// ─── RabbitMQ Publisher (Singleton — one connection) ─────────────────────────
+// ─── RabbitMQ Publisher ───────────────────────────────────────────────────────
 builder.Services.AddSingleton<Progressio.Services.Messaging.IRabbitMqPublisher,
                                Progressio.Services.Messaging.RabbitMqPublisher>();
 
-// ─── Upload path ──────────────────────────────────────────────────────────────
-// ISPRAVKA: Eksplicitno postavljamo WebRootPath da UseStaticFiles ne prijavi warning.
-// Dockerfile kreira /app/wwwroot, ali builder.Environment.WebRootPath je null dok
-// fajl sistem nije spreman — postavljamo ga rucno prije build-a.
-var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-Directory.CreateDirectory(Path.Combine(wwwrootPath, "uploads", "profiles"));
-builder.Environment.WebRootPath = wwwrootPath;
-builder.Configuration["UploadPath"] = Path.Combine(wwwrootPath, "uploads", "profiles");
-
 // ─── Singletons ───────────────────────────────────────────────────────────────
-builder.Services.AddSingleton<Progressio.Commom.Services.CryptoService>();
+builder.Services.AddSingleton(new Progressio.Commom.Services.CryptoService(tokenHashKey));
 
-// ─── Global Exception Handler (.NET 9) ───────────────────────────────────────
+// ─── Global Exception Handler ─────────────────────────────────────────────────
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
-builder.Services.AddControllers();
-
+builder.Services.AddControllers(options =>
+    options.Filters.Add<AppExceptionFilter>());
 // ─── SignalR ──────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR();
 
-// ─── Static files (for profile image upload) ─────────────────────────────────
-builder.Services.AddDirectoryBrowser();
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+var allowedOrigins = builder.Configuration.GetRequiredValue("Cors:AllowedOrigins")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+if (allowedOrigins.Length == 0)
+    throw new InvalidOperationException("Cors:AllowedOrigins must contain at least one origin.");
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("ConfiguredOrigins", policy =>
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials());
+});
 
-// ─── Swagger / OpenAPI with JWT support ──────────────────────────────────────
+// ─── Swagger ──────────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -302,11 +342,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
-// Static files for profile images
 app.UseStaticFiles();
-
+app.UseCors("ConfiguredOrigins");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

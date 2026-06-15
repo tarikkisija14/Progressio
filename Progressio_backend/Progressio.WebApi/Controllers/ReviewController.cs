@@ -4,6 +4,7 @@ using Progressio.Model.Exceptions;
 using Progressio.Model.Requests.ReviewRequests;
 using Progressio.Model.Responses.ReviewResponses;
 using Progressio.Model.SearchObjects;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using System.Security.Claims;
 
@@ -11,25 +12,19 @@ namespace Progressio.WebApi.Controllers
 {
     [ApiController]
     [Route("api/reviews")]
+    [Authorize]
     public class ReviewController : ControllerBase
     {
         private readonly IReviewService _reviewService;
+        private readonly IAppCurrentUserService _currentUser;
 
-        public ReviewController(IReviewService reviewService)
+        public ReviewController(IReviewService reviewService, IAppCurrentUserService currentUser)
         {
             _reviewService = reviewService;
-        }
-
-        private int GetUserId()
-        {
-            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(value, out var id) || id <= 0)
-                throw new UnauthorizedException("JWT token does not contain a valid user identifier.");
-            return id;
+            _currentUser = currentUser;
         }
 
         [HttpGet("{contentId:int}")]
-        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<ReviewResponse>>> GetForContent(
             int contentId,
             [FromQuery] bool hideSpoilers = false,
@@ -52,7 +47,7 @@ namespace Progressio.WebApi.Controllers
         [Authorize]
         public async Task<ActionResult<ReviewResponse>> GetMyReview(int contentId)
         {
-            var result = await _reviewService.GetMyReviewForContentAsync(GetUserId(), contentId);
+            var result = await _reviewService.GetMyReviewForContentAsync(_currentUser.UserId, contentId);
             if (result is null)
                 return NotFound();
             return Ok(result);
@@ -62,7 +57,7 @@ namespace Progressio.WebApi.Controllers
         [Authorize]
         public async Task<ActionResult<ReviewResponse>> Create([FromBody] ReviewInsertRequest request)
         {
-            var result = await _reviewService.CreateReviewAsync(GetUserId(), request);
+            var result = await _reviewService.CreateReviewAsync(_currentUser.UserId, request);
             return CreatedAtAction(nameof(GetMyReview), new { contentId = result.ContentId }, result);
         }
 
@@ -70,7 +65,7 @@ namespace Progressio.WebApi.Controllers
         [Authorize]
         public async Task<ActionResult<ReviewResponse>> Update(int reviewId, [FromBody] ReviewUpdateRequest request)
         {
-            var result = await _reviewService.UpdateReviewAsync(GetUserId(), reviewId, request);
+            var result = await _reviewService.UpdateReviewAsync(_currentUser.UserId, reviewId, request);
             return Ok(result);
         }
 

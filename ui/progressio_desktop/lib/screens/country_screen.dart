@@ -9,6 +9,7 @@ import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/city_provider.dart';
 import 'package:progressio_desktop/providers/country_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class CountryScreen extends StatefulWidget {
   const CountryScreen({super.key});
@@ -50,10 +51,8 @@ class _CountryScreenState extends State<CountryScreen> {
   Future<void> _loadCountries() async {
     setState(() => _loadingCountries = true);
     try {
-      final result = await _countryProvider.get(
-        filter: {'pageSize': 300},
-      );
-      setState(() => _countries = result.items ?? []);
+      final items = await _countryProvider.getAll();
+      if (mounted) setState(() => _countries = items);
     } catch (e) {
       _showError(e.toString());
     } finally {
@@ -65,15 +64,21 @@ class _CountryScreenState extends State<CountryScreen> {
     if (_selectedCountry == null) return;
     setState(() => _loadingCities = true);
     try {
-      final result = await _cityProvider.get(
+      final items = await _cityProvider.getAll(
         filter: {
           'countryId': _selectedCountry!.id,
-          'pageSize': 200,
           if (_citySearchController.text.trim().isNotEmpty)
             'name': _citySearchController.text.trim(),
         },
       );
-      setState(() => _cityResult = result);
+      if (mounted) {
+        setState(() {
+          _cityResult = SearchResult<City>(
+            totalCount: items.length,
+            items: items,
+          );
+        });
+      }
     } catch (e) {
       _showError(e.toString());
     } finally {
@@ -246,6 +251,7 @@ class _CountryScreenState extends State<CountryScreen> {
   }
 
   Future<void> _deleteCountry(Country country) async {
+    if (!await showDeleteConfirmation(context, itemName: country.name)) return;
     try {
       await _countryProvider.delete(country.id);
       if (_selectedCountry?.id == country.id) {
@@ -266,6 +272,7 @@ class _CountryScreenState extends State<CountryScreen> {
   }
 
   Future<void> _deleteCity(City city) async {
+    if (!await showDeleteConfirmation(context, itemName: city.name)) return;
     try {
       await _cityProvider.delete(city.id);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -474,15 +481,11 @@ class _CountryScreenState extends State<CountryScreen> {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: const [
-            DataColumn(label: Text('ID')),
             DataColumn(label: Text('City Name')),
-            DataColumn(label: Text('')),
+            DataColumn(label: Text('Actions')),
           ],
           rows: cities
               .map((c) => DataRow(cells: [
-                    DataCell(Text('#${c.id}',
-                        style: const TextStyle(
-                            color: AppColors.textMuted))),
                     DataCell(Text(c.name,
                         style: const TextStyle(
                             color: AppColors.textPrimary,

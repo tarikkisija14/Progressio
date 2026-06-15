@@ -20,6 +20,7 @@ public class EpisodeAiredJob : BackgroundService
 
     private const string NotificationQueue = "send_notification";
     private const string EmailQueue = "email.send";
+    private static readonly int[] PublishRetryDelaysMs = [1000, 2000, 4000, 8000];
 
     public EpisodeAiredJob(
         IServiceScopeFactory scopeFactory,
@@ -103,90 +104,113 @@ public class EpisodeAiredJob : BackgroundService
             _logger.LogInformation("EpisodeAiredJob: Found {EpisodeCount} episodes and {ChapterCount} chapters airing today",
                 airingEpisodes.Count, releasingChapters.Count);
 
+            var contentIds = airingEpisodes
+                .Select(episode => episode.Season.ContentId)
+                .Concat(releasingChapters.Select(chapter => chapter.ContentId))
+                .Distinct()
+                .ToArray();
+
+            var recipients = contentIds.Length == 0
+                ? new List<ReleaseRecipient>()
+                : await db.UserContentProgresses
+                    .AsNoTracking()
+                    .Where(progress =>
+                        contentIds.Contains(progress.ContentId) &&
+                        progress.Status == ProgressStatus.InProgress)
+                    .Select(progress => new ReleaseRecipient(
+                        progress.ContentId,
+                        progress.UserId,
+                        progress.User.Email,
+                        progress.User.UserName))
+                    .ToListAsync(ct);
+
+            var recipientsByContent = recipients.ToLookup(recipient => recipient.ContentId);
+
             foreach (var episode in airingEpisodes)
             {
                 var contentId = episode.Season.ContentId;
                 var contentTitle = episode.Season.Content.Title;
+                var episodeRecipients = recipientsByContent[contentId].ToList();
 
-                var watchingUserIds = await db.UserContentProgresses
-                    .Where(p => p.ContentId == contentId && p.Status == ProgressStatus.InProgress)
-                    .Select(p => p.UserId)
-                    .ToListAsync(ct);
-
-                foreach (var userId in watchingUserIds)
+                foreach (var recipient in episodeRecipients)
                 {
-                    var user = await db.Users.FindAsync(new object[] { userId }, ct);
-
-                    var notificationMsg = new SendNotificationMessage
+                    var notificationMessage = new SendNotificationMessage
                     {
-                        UserId = userId,
+                        UserId = recipient.UserId,
                         Title = "New Episode Available!",
                         Message = $"Episode {episode.EpisodeNumber} of {contentTitle} — \"{episode.Title}\" is now available!",
                         NotificationType = NotificationType.NewEpisode.ToString(),
                         RelatedEntityId = episode.Id
                     };
 
-                    await PublishMessageAsync(NotificationQueue, notificationMsg, ct);
+                    await PublishMessageAsync(NotificationQueue, notificationMessage, ct);
 
-                    if (user is not null && !string.IsNullOrEmpty(user.Email))
+                    if (!string.IsNullOrWhiteSpace(recipient.Email))
                     {
-                        var emailMsg = new SendEmailMessage
+                        var recipientName = string.IsNullOrWhiteSpace(recipient.Username)
+                            ? recipient.Email
+                            : recipient.Username;
+
+                        var emailMessage = new SendEmailMessage
                         {
-                            ToEmail = user.Email,
-                            ToName = user.UserName ?? user.Email,
+                            ToEmail = recipient.Email,
+                            ToName = recipientName,
                             Subject = $"New episode: {contentTitle}",
-                            Body = $"Hi {user.UserName},\n\nEpisode {episode.EpisodeNumber} \"{episode.Title}\" from {contentTitle} is now available!\n\nHappy watching,\nProgressio"
+                            Body = $"Hi {recipientName},\n\nEpisode {episode.EpisodeNumber} \"{episode.Title}\" from {contentTitle} is now available!\n\nHappy watching,\nProgressio"
                         };
 
-                        await PublishMessageAsync(EmailQueue, emailMsg, ct);
+                        await PublishMessageAsync(EmailQueue, emailMessage, ct);
                     }
                 }
 
-                _logger.LogInformation("EpisodeAiredJob: Notified {Count} users about episode {EpisodeId} ({ContentTitle})",
-                    watchingUserIds.Count, episode.Id, contentTitle);
+                _logger.LogInformation(
+                    "EpisodeAiredJob: Notified {Count} users about episode {EpisodeId} ({ContentTitle})",
+                    episodeRecipients.Count,
+                    episode.Id,
+                    contentTitle);
             }
 
             foreach (var chapter in releasingChapters)
             {
-                var contentId = chapter.ContentId;
                 var contentTitle = chapter.Content.Title;
+                var chapterRecipients = recipientsByContent[chapter.ContentId].ToList();
 
-                var readingUserIds = await db.UserContentProgresses
-                    .Where(p => p.ContentId == contentId && p.Status == ProgressStatus.InProgress)
-                    .Select(p => p.UserId)
-                    .ToListAsync(ct);
-
-                foreach (var userId in readingUserIds)
+                foreach (var recipient in chapterRecipients)
                 {
-                    var user = await db.Users.FindAsync(new object[] { userId }, ct);
-
-                    var notificationMsg = new SendNotificationMessage
+                    var notificationMessage = new SendNotificationMessage
                     {
-                        UserId = userId,
+                        UserId = recipient.UserId,
                         Title = "New Chapter Available!",
                         Message = $"Chapter {chapter.ChapterNumber} of {contentTitle} — \"{chapter.Title}\" is now available!",
                         NotificationType = NotificationType.NewChapter.ToString(),
                         RelatedEntityId = chapter.Id
                     };
 
-                    await PublishMessageAsync(NotificationQueue, notificationMsg, ct);
+                    await PublishMessageAsync(NotificationQueue, notificationMessage, ct);
 
-                    if (user is not null && !string.IsNullOrEmpty(user.Email))
+                    if (!string.IsNullOrWhiteSpace(recipient.Email))
                     {
-                        var emailMsg = new SendEmailMessage
+                        var recipientName = string.IsNullOrWhiteSpace(recipient.Username)
+                            ? recipient.Email
+                            : recipient.Username;
+
+                        var emailMessage = new SendEmailMessage
                         {
-                            ToEmail = user.Email,
-                            ToName = user.UserName ?? user.Email,
+                            ToEmail = recipient.Email,
+                            ToName = recipientName,
                             Subject = $"New chapter: {contentTitle}",
-                            Body = $"Hi {user.UserName},\n\nChapter {chapter.ChapterNumber} \"{chapter.Title}\" from {contentTitle} is now available!\n\nHappy reading,\nProgressio"
+                            Body = $"Hi {recipientName},\n\nChapter {chapter.ChapterNumber} \"{chapter.Title}\" from {contentTitle} is now available!\n\nHappy reading,\nProgressio"
                         };
 
-                        await PublishMessageAsync(EmailQueue, emailMsg, ct);
+                        await PublishMessageAsync(EmailQueue, emailMessage, ct);
                     }
                 }
 
-                _logger.LogInformation("EpisodeAiredJob: Notified {Count} users about chapter {ChapterId} ({ContentTitle})",
-                    readingUserIds.Count, chapter.Id, contentTitle);
+                _logger.LogInformation(
+                    "EpisodeAiredJob: Notified {Count} users about chapter {ChapterId} ({ContentTitle})",
+                    chapterRecipients.Count,
+                    chapter.Id,
+                    contentTitle);
             }
         }
         catch (Exception ex)
@@ -197,25 +221,50 @@ public class EpisodeAiredJob : BackgroundService
 
     private async Task PublishMessageAsync<T>(string queue, T message, CancellationToken ct)
     {
-        try
+        for (var attempt = 0; ; attempt++)
         {
-            var json = JsonSerializer.Serialize(message);
-            var body = Encoding.UTF8.GetBytes(json);
-            var props = new BasicProperties { Persistent = true };
+            try
+            {
+                var json = JsonSerializer.Serialize(message);
+                var body = Encoding.UTF8.GetBytes(json);
+                var properties = new BasicProperties { Persistent = true };
 
-            await _channel!.BasicPublishAsync(
-                exchange: "",
-                routingKey: queue,
-                mandatory: false,
-                basicProperties: props,
-                body: body,
-                cancellationToken: ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "EpisodeAiredJob: Failed to publish message to queue {Queue}", queue);
+                await _channel!.BasicPublishAsync(
+                    exchange: string.Empty,
+                    routingKey: queue,
+                    mandatory: true,
+                    basicProperties: properties,
+                    body: body,
+                    cancellationToken: ct);
+                return;
+            }
+            catch (Exception exception) when (attempt < PublishRetryDelaysMs.Length)
+            {
+                var delayMs = PublishRetryDelaysMs[attempt];
+                _logger.LogWarning(
+                    exception,
+                    "EpisodeAiredJob: Publish to {Queue} failed on attempt {Attempt}. Retrying in {DelayMs} ms.",
+                    queue,
+                    attempt + 1,
+                    delayMs);
+                await Task.Delay(delayMs, ct);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(
+                    exception,
+                    "EpisodeAiredJob: Failed to publish message to queue {Queue} after all retries.",
+                    queue);
+                throw;
+            }
         }
     }
+
+    private sealed record ReleaseRecipient(
+        int ContentId,
+        int UserId,
+        string? Email,
+        string? Username);
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {

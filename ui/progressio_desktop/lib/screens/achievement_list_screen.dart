@@ -8,6 +8,7 @@ import 'package:progressio_desktop/model/achievement.dart';
 import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/achievement_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class AchievementListScreen extends StatefulWidget {
   const AchievementListScreen({super.key});
@@ -54,15 +55,16 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
             'name': _searchController.text.trim(),
         },
       );
-      setState(() => _result = result);
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       _showError(e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppColors.error),
     );
@@ -73,7 +75,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
 
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.card,
         title: Text(
           achievement == null ? 'Add Achievement' : 'Edit Achievement',
@@ -99,8 +101,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
                       child: FormBuilderTextField(
                         name: 'code',
                         style: const TextStyle(color: AppColors.textPrimary),
-                        decoration:
-                            const InputDecoration(labelText: 'Code *'),
+                        decoration: const InputDecoration(labelText: 'Code *'),
                         validator: FormBuilderValidators.required(),
                       ),
                     ),
@@ -109,8 +110,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
                       child: FormBuilderTextField(
                         name: 'name',
                         style: const TextStyle(color: AppColors.textPrimary),
-                        decoration:
-                            const InputDecoration(labelText: 'Name *'),
+                        decoration: const InputDecoration(labelText: 'Name *'),
                         validator: FormBuilderValidators.required(),
                       ),
                     ),
@@ -120,8 +120,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
                 FormBuilderTextField(
                   name: 'description',
                   style: const TextStyle(color: AppColors.textPrimary),
-                  decoration:
-                      const InputDecoration(labelText: 'Description'),
+                  decoration: const InputDecoration(labelText: 'Description'),
                   maxLines: 2,
                 ),
                 const SizedBox(height: 12),
@@ -146,46 +145,43 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel',
                 style: TextStyle(color: AppColors.textMuted)),
           ),
           if (achievement != null)
             ElevatedButton(
               onPressed: () async {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 await _delete(achievement);
               },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.error),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
               child: const Text('Delete'),
             ),
           ElevatedButton(
             onPressed: () async {
-              if (!(formKey.currentState?.saveAndValidate() ?? false))
-                return;
-              final values = Map<String, dynamic>.from(
-                  formKey.currentState!.value);
-              Navigator.pop(context);
+              if (!(formKey.currentState?.saveAndValidate() ?? false)) return;
+              final values =
+                  Map<String, dynamic>.from(formKey.currentState!.value);
+              Navigator.pop(dialogContext);
               try {
                 if (achievement == null) {
                   await _achievementProvider.insert(values);
                 } else {
                   await _achievementProvider.update(achievement.id, values);
                 }
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(achievement == null
+                showSuccessSnackBar(
+                  context,
+                  achievement == null
                       ? 'Achievement created.'
-                      : 'Achievement updated.'),
-                  backgroundColor: AppColors.success,
-                ));
-                _search(page: _page);
+                      : 'Achievement updated.',
+                );
+                if (mounted) _search(page: _page);
               } catch (e) {
-                _showError(e.toString());
+                showErrorSnackBar(context, e);
               }
             },
-            child:
-                Text(achievement == null ? 'Create' : 'Update'),
+            child: Text(achievement == null ? 'Create' : 'Update'),
           ),
         ],
       ),
@@ -193,21 +189,17 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
   }
 
   Future<void> _delete(Achievement achievement) async {
+    if (!await showDeleteConfirmation(context, itemName: achievement.name)) return;
     try {
       await _achievementProvider.delete(achievement.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Achievement deleted.'),
-            backgroundColor: AppColors.error),
-      );
-      _search(page: _page);
+      showSuccessSnackBar(context, 'Achievement deleted.');
+      if (mounted) _search(page: _page);
     } catch (e) {
-      _showError(e.toString());
+      showErrorSnackBar(context, e);
     }
   }
 
-  int get _totalPages =>
-      ((_result?.totalCount ?? 0) / _pageSize).ceil();
+  int get _totalPages => ((_result?.totalCount ?? 0) / _pageSize).ceil();
 
   @override
   Widget build(BuildContext context) {
@@ -235,8 +227,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
               style: const TextStyle(color: AppColors.textPrimary),
               decoration: const InputDecoration(
                 hintText: 'Search by name...',
-                prefixIcon:
-                    Icon(Icons.search, color: AppColors.textMuted),
+                prefixIcon: Icon(Icons.search, color: AppColors.textMuted),
               ),
               onSubmitted: (_) => _search(),
             ),
@@ -252,8 +243,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
             onPressed: () => _openDialog(),
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Add Achievement'),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
           ),
         ],
       ),
@@ -297,8 +287,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
         DataCell(_buildIcon(a.iconUrl)),
         DataCell(
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: AppColors.secondary.withOpacity(0.15),
               borderRadius: BorderRadius.circular(6),
@@ -332,8 +321,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
         ),
         DataCell(
           IconButton(
-            icon: const Icon(Icons.edit,
-                color: AppColors.primary, size: 18),
+            icon: const Icon(Icons.edit, color: AppColors.primary, size: 18),
             tooltip: 'Edit',
             onPressed: () => _openDialog(achievement: a),
           ),
@@ -367,8 +355,7 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
         color: AppColors.premium.withOpacity(0.15),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Icon(Icons.emoji_events,
-          color: AppColors.premium, size: 18),
+      child: const Icon(Icons.emoji_events, color: AppColors.premium, size: 18),
     );
   }
 
@@ -387,18 +374,15 @@ class _AchievementListScreenState extends State<AchievementListScreen> {
               IconButton(
                 icon: const Icon(Icons.chevron_left,
                     color: AppColors.textSecondary),
-                onPressed:
-                    _page > 1 ? () => _search(page: _page - 1) : null,
+                onPressed: _page > 1 ? () => _search(page: _page - 1) : null,
               ),
               Text('Page $_page of $_totalPages',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary)),
+                  style: const TextStyle(color: AppColors.textSecondary)),
               IconButton(
                 icon: const Icon(Icons.chevron_right,
                     color: AppColors.textSecondary),
-                onPressed: _page < _totalPages
-                    ? () => _search(page: _page + 1)
-                    : null,
+                onPressed:
+                    _page < _totalPages ? () => _search(page: _page + 1) : null,
               ),
             ],
           ),

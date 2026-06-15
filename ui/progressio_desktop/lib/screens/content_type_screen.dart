@@ -7,6 +7,7 @@ import 'package:progressio_desktop/model/content_type.dart';
 import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/content_type_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class ContentTypeScreen extends StatefulWidget {
   const ContentTypeScreen({super.key});
@@ -53,15 +54,16 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
             'name': _searchController.text.trim(),
         },
       );
-      setState(() => _result = result);
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       _showError(e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppColors.error),
     );
@@ -72,7 +74,7 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
 
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.card,
         title: Text(
           contentType == null ? 'Add Content Type' : 'Edit Content Type',
@@ -93,43 +95,40 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel',
                 style: TextStyle(color: AppColors.textMuted)),
           ),
           if (contentType != null)
             ElevatedButton(
               onPressed: () async {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 await _delete(contentType);
               },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.error),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
               child: const Text('Delete'),
             ),
           ElevatedButton(
             onPressed: () async {
-              if (!(formKey.currentState?.saveAndValidate() ?? false))
-                return;
-              final values = Map<String, dynamic>.from(
-                  formKey.currentState!.value);
-              Navigator.pop(context);
+              if (!(formKey.currentState?.saveAndValidate() ?? false)) return;
+              final values =
+                  Map<String, dynamic>.from(formKey.currentState!.value);
+              Navigator.pop(dialogContext);
               try {
                 if (contentType == null) {
                   await _contentTypeProvider.insert(values);
                 } else {
-                  await _contentTypeProvider.update(
-                      contentType.id, values);
+                  await _contentTypeProvider.update(contentType.id, values);
                 }
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(contentType == null
+                showSuccessSnackBar(
+                  context,
+                  contentType == null
                       ? 'Content type created.'
-                      : 'Content type updated.'),
-                  backgroundColor: AppColors.success,
-                ));
-                _search(page: _page);
+                      : 'Content type updated.',
+                );
+                if (mounted) _search(page: _page);
               } catch (e) {
-                _showError(e.toString());
+                showErrorSnackBar(context, e);
               }
             },
             child: Text(contentType == null ? 'Create' : 'Update'),
@@ -140,21 +139,17 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
   }
 
   Future<void> _delete(ContentType contentType) async {
+    if (!await showDeleteConfirmation(context, itemName: contentType.name)) return;
     try {
       await _contentTypeProvider.delete(contentType.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Content type deleted.'),
-            backgroundColor: AppColors.error),
-      );
-      _search(page: _page);
+      showSuccessSnackBar(context, 'Content type deleted.');
+      if (mounted) _search(page: _page);
     } catch (e) {
-      _showError(e.toString());
+      showErrorSnackBar(context, e);
     }
   }
 
-  int get _totalPages =>
-      ((_result?.totalCount ?? 0) / _pageSize).ceil();
+  int get _totalPages => ((_result?.totalCount ?? 0) / _pageSize).ceil();
 
   @override
   Widget build(BuildContext context) {
@@ -182,8 +177,7 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
               style: const TextStyle(color: AppColors.textPrimary),
               decoration: const InputDecoration(
                 hintText: 'Search content types...',
-                prefixIcon:
-                    Icon(Icons.search, color: AppColors.textMuted),
+                prefixIcon: Icon(Icons.search, color: AppColors.textMuted),
               ),
               onSubmitted: (_) => _search(),
             ),
@@ -199,8 +193,7 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
             onPressed: () => _openDialog(),
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Add Content Type'),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
           ),
         ],
       ),
@@ -225,9 +218,8 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columns: const [
-            DataColumn(label: Text('ID')),
             DataColumn(label: Text('Name')),
-            DataColumn(label: Text('')),
+            DataColumn(label: Text('Actions')),
           ],
           rows: items.map((t) => _buildRow(t)).toList(),
         ),
@@ -238,16 +230,13 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
   DataRow _buildRow(ContentType t) {
     return DataRow(
       cells: [
-        DataCell(Text('#${t.id}',
-            style: const TextStyle(color: AppColors.textMuted))),
         DataCell(Text(t.name,
             style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w500))),
         DataCell(
           IconButton(
-            icon: const Icon(Icons.edit,
-                color: AppColors.primary, size: 18),
+            icon: const Icon(Icons.edit, color: AppColors.primary, size: 18),
             tooltip: 'Edit',
             onPressed: () => _openDialog(contentType: t),
           ),
@@ -271,18 +260,15 @@ class _ContentTypeScreenState extends State<ContentTypeScreen> {
               IconButton(
                 icon: const Icon(Icons.chevron_left,
                     color: AppColors.textSecondary),
-                onPressed:
-                    _page > 1 ? () => _search(page: _page - 1) : null,
+                onPressed: _page > 1 ? () => _search(page: _page - 1) : null,
               ),
               Text('Page $_page of $_totalPages',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary)),
+                  style: const TextStyle(color: AppColors.textSecondary)),
               IconButton(
                 icon: const Icon(Icons.chevron_right,
                     color: AppColors.textSecondary),
-                onPressed: _page < _totalPages
-                    ? () => _search(page: _page + 1)
-                    : null,
+                onPressed:
+                    _page < _totalPages ? () => _search(page: _page + 1) : null,
               ),
             ],
           ),

@@ -14,10 +14,13 @@ namespace Progressio.Services.Services
         Task<LoginResponse> RegisterAsync(RegisterRequest request);
         Task<LoginResponse> LoginAsync(LoginRequest request);
         Task<LoginResponse> RefreshTokenAsync(string refreshToken);
-        Task LogoutAsync(string refreshToken);
+        Task LogoutAsync(int userId, string refreshToken);
+        Task RequestPasswordResetAsync(ForgotPasswordRequest request);
+        Task ResetPasswordAsync(ResetPasswordRequest request);
         Task ChangePasswordAsync(int userId, ChangePasswordRequest request);
         Task<string> UploadProfileImageAsync(int userId, IFormFile file);
         Task<UserResponse> GetCurrentUserAsync(int userId);
+        Task<UserResponse> UpdateProfileAsync(int userId, UpdateProfileRequest request);
         Task UpdateProfilePublicAsync(int userId, bool isPublic);
     }
 }

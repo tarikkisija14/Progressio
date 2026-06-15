@@ -15,6 +15,7 @@ namespace Progressio.Model.Responses.PaymentResponses
         public decimal Amount { get; set; }
         public string Currency { get; set; } = null!;
         public string Status { get; set; } = null!;
+        public bool IsPaid { get; set; }
         public DateTime? PaidAt { get; set; }
         public DateTime? RefundedAt { get; set; }
         public decimal? RefundedAmount { get; set; }

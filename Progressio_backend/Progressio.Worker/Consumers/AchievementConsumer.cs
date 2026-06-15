@@ -1,11 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Progressio.Model.Messages;
+﻿using Progressio.Model.Messages;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace Progressio.Worker.Consumers
 {
@@ -87,9 +87,9 @@ namespace Progressio.Worker.Consumers
 
                 try
                 {
-                    var message = JsonSerializer.Deserialize<CheckAchievementsMessage>(json);
-                    if (message is not null)
-                        await ProcessAsync(message, stoppingToken);
+                    var message = JsonSerializer.Deserialize<CheckAchievementsMessage>(json)
+                        ?? throw new InvalidOperationException("Invalid achievement message payload.");
+                    await ProcessAsync(message, stoppingToken);
 
                     await _channel!.BasicAckAsync(ea.DeliveryTag, false, stoppingToken);
                 }
@@ -141,29 +141,84 @@ namespace Progressio.Worker.Consumers
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            var achievements = await db.Achievements.ToListAsync(ct);
+            var achievements = await db.Achievements
+                .AsNoTracking()
+                .ToListAsync(ct);
 
-            foreach (var achievement in achievements)
-            {
-                bool alreadyEarned = await db.UserAchievements
-                    .AnyAsync(ua => ua.UserId == message.UserId
-                                 && ua.AchievementId == achievement.Id, ct);
-                if (alreadyEarned) continue;
+            var earnedAchievementIds = await db.UserAchievements
+                .AsNoTracking()
+                .Where(userAchievement => userAchievement.UserId == message.UserId)
+                .Select(userAchievement => userAchievement.AchievementId)
+                .ToHashSetAsync(ct);
 
-                bool conditionMet = await CheckConditionAsync(db, message.UserId, achievement, ct);
-                if (!conditionMet) continue;
+            var today = DateTime.UtcNow.Date;
+            var watchedTodayCount = await db.EpisodeProgresses
+                .AsNoTracking()
+                .CountAsync(episodeProgress =>
+                    episodeProgress.Progress.UserId == message.UserId &&
+                    episodeProgress.IsWatched &&
+                    episodeProgress.WatchedAt.HasValue &&
+                    episodeProgress.WatchedAt.Value.Date == today,
+                    ct);
 
-                db.UserAchievements.Add(new UserAchievement
+            var reviewCount = await db.Reviews
+                .AsNoTracking()
+                .CountAsync(review => review.UserId == message.UserId, ct);
+
+            var followerCount = await db.UserFollows
+                .AsNoTracking()
+                .CountAsync(follow => follow.FollowingId == message.UserId, ct);
+
+            var completedByContentType = await db.UserContentProgresses
+                .AsNoTracking()
+                .Where(progress =>
+                    progress.UserId == message.UserId &&
+                    progress.Status == Model.Enums.ProgressStatus.Completed)
+                .GroupBy(progress => progress.Content.ContentType.Name)
+                .Select(group => new
                 {
-                    UserId = message.UserId,
-                    AchievementId = achievement.Id,
-                    EarnedAt = DateTime.UtcNow
-                });
+                    ContentTypeName = group.Key,
+                    Count = group.Count()
+                })
+                .ToDictionaryAsync(item => item.ContentTypeName, item => item.Count, ct);
 
-                await db.SaveChangesAsync(ct);
+            var longestStreak = await db.UserStreaks
+                .AsNoTracking()
+                .Where(streak => streak.UserId == message.UserId)
+                .Select(streak => streak.LongestStreak)
+                .FirstOrDefaultAsync(ct);
 
-                _logger.LogInformation("User {UserId} earned achievement '{Code}'",
-                    message.UserId, achievement.Code);
+            var completedTotal = completedByContentType.Values.Sum();
+            var newlyEarned = achievements
+                .Where(achievement => !earnedAchievementIds.Contains(achievement.Id))
+                .Where(achievement => IsConditionMet(
+                    achievement.Code,
+                    watchedTodayCount,
+                    reviewCount,
+                    followerCount,
+                    completedTotal,
+                    longestStreak,
+                    completedByContentType))
+                .ToList();
+
+            if (newlyEarned.Count == 0)
+                return;
+
+            var earnedAt = DateTime.UtcNow;
+            db.UserAchievements.AddRange(newlyEarned.Select(achievement => new UserAchievement
+            {
+                UserId = message.UserId,
+                AchievementId = achievement.Id,
+                EarnedAt = earnedAt
+            }));
+            await db.SaveChangesAsync(ct);
+
+            foreach (var achievement in newlyEarned)
+            {
+                _logger.LogInformation(
+                    "User {UserId} earned achievement '{Code}'",
+                    message.UserId,
+                    achievement.Code);
 
                 await PublishNotificationAsync(new SendNotificationMessage
                 {
@@ -174,6 +229,33 @@ namespace Progressio.Worker.Consumers
                     RelatedEntityId = achievement.Id
                 }, ct);
             }
+        }
+
+        private static bool IsConditionMet(
+            string achievementCode,
+            int watchedTodayCount,
+            int reviewCount,
+            int followerCount,
+            int completedTotal,
+            int longestStreak,
+            IReadOnlyDictionary<string, int> completedByContentType)
+        {
+            completedByContentType.TryGetValue("Knjiga", out var completedBooks);
+            completedByContentType.TryGetValue("Anime", out var completedAnime);
+            completedByContentType.TryGetValue("Igrica", out var completedGames);
+
+            return achievementCode switch
+            {
+                "binge_watcher" => watchedTodayCount >= 10,
+                "book_worm" => completedBooks >= 5,
+                "critic" => reviewCount >= 20,
+                "social_butterfly" => followerCount >= 10,
+                "completionist" => completedTotal >= 50,
+                "streak_master" => longestStreak >= 30,
+                "anime_nerd" => completedAnime >= 20,
+                "game_over" => completedGames >= 10,
+                _ => false
+            };
         }
 
         private async Task PublishNotificationAsync(SendNotificationMessage notification, CancellationToken ct)
@@ -198,53 +280,6 @@ namespace Progressio.Worker.Consumers
             {
                 _logger.LogError(ex, "Greška pri publish-u achievement notifikacije za User {UserId}", notification.UserId);
             }
-        }
-
-        private static async Task<bool> CheckConditionAsync(
-            ApplicationDbContext db, int userId, Achievement achievement, CancellationToken ct)
-        {
-            return achievement.Code switch
-            {
-                "binge_watcher" => await db.EpisodeProgresses
-                    .Include(ep => ep.Progress)
-                    .CountAsync(ep => ep.Progress.UserId == userId
-                                   && ep.IsWatched
-                                   && ep.WatchedAt.HasValue
-                                   && ep.WatchedAt.Value.Date == DateTime.UtcNow.Date, ct) >= 10,
-
-                "book_worm" => await db.UserContentProgresses
-                    .Include(p => p.Content).ThenInclude(c => c.ContentType)
-                    .CountAsync(p => p.UserId == userId
-                                  && p.Status == Model.Enums.ProgressStatus.Completed
-                                  && p.Content.ContentType.Name == "Knjiga", ct) >= 5,
-
-                "critic" => await db.Reviews
-                    .CountAsync(r => r.UserId == userId, ct) >= 20,
-
-                "social_butterfly" => await db.UserFollows
-                    .CountAsync(f => f.FollowingId == userId, ct) >= 10,
-
-                "completionist" => await db.UserContentProgresses
-                    .CountAsync(p => p.UserId == userId
-                                  && p.Status == Model.Enums.ProgressStatus.Completed, ct) >= 50,
-
-                "streak_master" => await db.UserStreaks
-                    .AnyAsync(s => s.UserId == userId && s.LongestStreak >= 30, ct),
-
-                "anime_nerd" => await db.UserContentProgresses
-                    .Include(p => p.Content).ThenInclude(c => c.ContentType)
-                    .CountAsync(p => p.UserId == userId
-                                  && p.Status == Model.Enums.ProgressStatus.Completed
-                                  && p.Content.ContentType.Name == "Anime", ct) >= 20,
-
-                "game_over" => await db.UserContentProgresses
-                    .Include(p => p.Content).ThenInclude(c => c.ContentType)
-                    .CountAsync(p => p.UserId == userId
-                                  && p.Status == Model.Enums.ProgressStatus.Completed
-                                  && p.Content.ContentType.Name == "Igrica", ct) >= 10,
-
-                _ => false
-            };
         }
 
         public override async Task StopAsync(CancellationToken cancellationToken)

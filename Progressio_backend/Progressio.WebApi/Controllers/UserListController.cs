@@ -5,6 +5,7 @@ using Progressio.Model.Requests.ListRequests;
 using Progressio.Model.Responses.ListResponses;
 using Progressio.Model.SearchObjects;
 using Progressio.Services;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using System.Security.Claims;
 
@@ -15,10 +16,12 @@ namespace Progressio.WebApi.Controllers;
 public class UserListController : ControllerBase
 {
     private readonly IUserListService _listService;
+    private readonly IAppCurrentUserService _currentUser;
 
-    public UserListController(IUserListService listService)
+    public UserListController(IUserListService listService, IAppCurrentUserService currentUser)
     {
         _listService = listService;
+        _currentUser = currentUser;
     }
 
     [HttpGet("api/lists")]
@@ -35,7 +38,7 @@ public class UserListController : ControllerBase
         };
 
         var result = await _listService.GetMyListsAsync(
-            GetCurrentUserId(),
+            _currentUser.UserId,
             searchObject);
 
         return Ok(result);
@@ -46,7 +49,7 @@ public class UserListController : ControllerBase
         [FromBody] UserListInsertRequest request)
     {
         var result = await _listService.CreateListAsync(
-            GetCurrentUserId(),
+            _currentUser.UserId,
             request);
 
         return Ok(result);
@@ -59,7 +62,7 @@ public class UserListController : ControllerBase
     {
         var result = await _listService.UpdateListAsync(
             id,
-            GetCurrentUserId(),
+            _currentUser.UserId,
             request);
 
         return Ok(result);
@@ -70,13 +73,24 @@ public class UserListController : ControllerBase
     {
         await _listService.DeleteListAsync(
             id,
-            GetCurrentUserId());
+            _currentUser.UserId);
 
         return NoContent();
     }
 
+    [HttpGet("api/lists/{id:int}/members")]
+    public async Task<ActionResult<PagedResult<UserListMemberResponse>>> GetMembers(
+        int id,
+        [FromQuery] BaseSearchObject search)
+    {
+        var result = await _listService.GetMembersAsync(
+            id,
+            _currentUser.UserId,
+            search);
+        return Ok(result);
+    }
+
     [HttpGet("api/lists/{id:int}/items")]
-    [AllowAnonymous]
     public async Task<ActionResult<PagedResult<UserListItemResponse>>> GetListItems(
         int id,
         [FromQuery] int page = 1,
@@ -90,7 +104,7 @@ public class UserListController : ControllerBase
 
         var result = await _listService.GetListItemsAsync(
             id,
-            TryGetCurrentUserId(),
+            _currentUser.TryGetUserId(),
             searchObject);
 
         return Ok(result);
@@ -103,7 +117,7 @@ public class UserListController : ControllerBase
     {
         var result = await _listService.AddItemAsync(
             id,
-            GetCurrentUserId(),
+            _currentUser.UserId,
             request);
 
         return Ok(result);
@@ -117,13 +131,12 @@ public class UserListController : ControllerBase
         await _listService.RemoveItemAsync(
             id,
             contentId,
-            GetCurrentUserId());
+            _currentUser.UserId);
 
         return NoContent();
     }
 
     [HttpGet("api/lists/public")]
-    [AllowAnonymous]
     public async Task<ActionResult<PagedResult<UserListResponse>>> GetPublicLists(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -145,7 +158,7 @@ public class UserListController : ControllerBase
     {
         var result = await _listService.ForkListAsync(
             id,
-            GetCurrentUserId());
+            _currentUser.UserId);
 
         return Ok(result);
     }
@@ -157,7 +170,7 @@ public class UserListController : ControllerBase
     {
         await _listService.InviteToListAsync(
             id,
-            GetCurrentUserId(),
+            _currentUser.UserId,
             userId);
 
         return NoContent();
@@ -168,7 +181,7 @@ public class UserListController : ControllerBase
     {
         await _listService.AcceptInviteAsync(
             id,
-            GetCurrentUserId());
+            _currentUser.UserId);
 
         return NoContent();
     }
@@ -178,7 +191,7 @@ public class UserListController : ControllerBase
     {
         await _listService.DeclineInviteAsync(
             id,
-            GetCurrentUserId());
+            _currentUser.UserId);
 
         return NoContent();
     }
@@ -188,24 +201,8 @@ public class UserListController : ControllerBase
     {
         await _listService.LeaveListAsync(
             id,
-            GetCurrentUserId());
+            _currentUser.UserId);
 
         return NoContent();
-    }
-
-    private int GetCurrentUserId()
-    {
-        return TryGetCurrentUserId()
-            ?? throw new UnauthorizedException();
-    }
-
-    private int? TryGetCurrentUserId()
-    {
-        var value = User.FindFirstValue(
-            ClaimTypes.NameIdentifier);
-
-        return int.TryParse(value, out var userId) && userId > 0
-            ? userId
-            : null;
     }
 }

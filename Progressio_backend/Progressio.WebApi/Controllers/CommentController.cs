@@ -4,40 +4,29 @@ using Progressio.Model.Exceptions;
 using Progressio.Model.Requests.CommentRequests;
 using Progressio.Model.Responses.CommentResponses;
 using Progressio.Model.SearchObjects;
+using Progressio.Services.Security;
 using Progressio.Services.Services;
 using System.Security.Claims;
 
 namespace Progressio.WebApi.Controllers
 {
     [ApiController]
+    [Authorize]
     public class CommentController : ControllerBase
     {
         private readonly ICommentService _commentService;
+        private readonly IAppCurrentUserService _currentUser;
 
-        public CommentController(ICommentService commentService)
+        public CommentController(ICommentService commentService, IAppCurrentUserService currentUser)
         {
             _commentService = commentService;
-        }
-
-        private int GetUserId()
-        {
-            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!int.TryParse(value, out var id) || id <= 0)
-                throw new UnauthorizedException("JWT token does not contain a valid user identifier.");
-            return id;
-        }
-
-        private int? TryGetUserId()
-        {
-            var value = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            return int.TryParse(value, out var id) && id > 0 ? id : null;
+            _currentUser = currentUser;
         }
 
         private bool IsAdmin() =>
-            User.IsInRole(AppRoles.Admin);
+            _currentUser.IsInRole(AppRoles.Admin);
 
         [HttpGet("api/episodes/{id:int}/comments")]
-        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<CommentResponse>>> GetByEpisode(
             int id,
             [FromQuery] int page = 1,
@@ -52,12 +41,11 @@ namespace Progressio.WebApi.Controllers
                 HideSpoilers = hideSpoilers
             };
 
-            var result = await _commentService.GetCommentsAsync(searchObject, TryGetUserId());
+            var result = await _commentService.GetCommentsAsync(searchObject, _currentUser.TryGetUserId());
             return Ok(result);
         }
 
         [HttpGet("api/chapters/{id:int}/comments")]
-        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<CommentResponse>>> GetByChapter(
             int id,
             [FromQuery] int page = 1,
@@ -72,12 +60,11 @@ namespace Progressio.WebApi.Controllers
                 HideSpoilers = hideSpoilers
             };
 
-            var result = await _commentService.GetCommentsAsync(searchObject, TryGetUserId());
+            var result = await _commentService.GetCommentsAsync(searchObject, _currentUser.TryGetUserId());
             return Ok(result);
         }
 
         [HttpGet("api/content/{id:int}/comments")]
-        [AllowAnonymous]
         public async Task<ActionResult<PagedResult<CommentResponse>>> GetByContent(
             int id,
             [FromQuery] int page = 1,
@@ -99,7 +86,7 @@ namespace Progressio.WebApi.Controllers
                 IncludeHidden = admin && isVisible.HasValue
             };
 
-            var result = await _commentService.GetCommentsAsync(searchObject, TryGetUserId());
+            var result = await _commentService.GetCommentsAsync(searchObject, _currentUser.TryGetUserId());
             return Ok(result);
         }
 
@@ -110,7 +97,7 @@ namespace Progressio.WebApi.Controllers
             [FromBody] CommentInsertRequest request)
         {
             request.EpisodeId = id;
-            var result = await _commentService.AddCommentAsync(GetUserId(), request);
+            var result = await _commentService.AddCommentAsync(_currentUser.UserId, request);
             return CreatedAtAction(nameof(GetByEpisode), new { id }, result);
         }
 
@@ -121,7 +108,7 @@ namespace Progressio.WebApi.Controllers
             [FromBody] CommentInsertRequest request)
         {
             request.ChapterId = id;
-            var result = await _commentService.AddCommentAsync(GetUserId(), request);
+            var result = await _commentService.AddCommentAsync(_currentUser.UserId, request);
             return CreatedAtAction(nameof(GetByChapter), new { id }, result);
         }
 
@@ -132,7 +119,7 @@ namespace Progressio.WebApi.Controllers
             [FromBody] CommentInsertRequest request)
         {
             request.ContentId = id;
-            var result = await _commentService.AddCommentAsync(GetUserId(), request);
+            var result = await _commentService.AddCommentAsync(_currentUser.UserId, request);
             return CreatedAtAction(nameof(GetByContent), new { id }, result);
         }
 
@@ -142,7 +129,7 @@ namespace Progressio.WebApi.Controllers
             int id,
             [FromBody] CommentUpdateRequest request)
         {
-            var result = await _commentService.UpdateCommentAsync(GetUserId(), id, request, IsAdmin());
+            var result = await _commentService.UpdateCommentAsync(_currentUser.UserId, id, request, IsAdmin());
             return Ok(result);
         }
 
@@ -150,7 +137,7 @@ namespace Progressio.WebApi.Controllers
         [Authorize]
         public async Task<IActionResult> ToggleLike(int id)
         {
-            await _commentService.ToggleLikeAsync(GetUserId(), id);
+            await _commentService.ToggleLikeAsync(_currentUser.UserId, id);
             return NoContent();
         }
 
@@ -158,7 +145,7 @@ namespace Progressio.WebApi.Controllers
         [Authorize]
         public async Task<IActionResult> Delete(int id)
         {
-            await _commentService.DeleteCommentAsync(GetUserId(), id, IsAdmin());
+            await _commentService.DeleteCommentAsync(_currentUser.UserId, id, IsAdmin());
             return NoContent();
         }
     }

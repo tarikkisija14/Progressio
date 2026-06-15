@@ -55,24 +55,35 @@ namespace Progressio.Services.Services
 
             _logger.LogInformation("User {FollowerId} is now following User {FollowingId}", currentUserId, targetUserId);
 
-            var follower = await _db.Users.FirstOrDefaultAsync(u => u.Id == currentUserId);
-            if (follower is not null)
+            try
             {
-                _publisher.Publish(UserFollowedQueue, new UserFollowedMessage
+                var follower = await _db.Users.FirstOrDefaultAsync(u => u.Id == currentUserId);
+                if (follower is not null)
                 {
-                    FollowedUserId = targetUserId,
-                    FollowerUserId = currentUserId,
-                    FollowerFirstName = follower.FirstName,
-                    FollowerLastName = follower.LastName,
-                    FollowerUserName = follower.UserName ?? string.Empty
+                    await _publisher.PublishAsync(UserFollowedQueue, new UserFollowedMessage
+                    {
+                        FollowedUserId = targetUserId,
+                        FollowerUserId = currentUserId,
+                        FollowerFirstName = follower.FirstName,
+                        FollowerLastName = follower.LastName,
+                        FollowerUserName = follower.UserName ?? string.Empty
+                    });
+                }
+
+                await _publisher.PublishAsync(AchievementsQueue, new CheckAchievementsMessage
+                {
+                    UserId = targetUserId,
+                    TriggerType = "FollowReceived"
                 });
             }
-
-            _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
+            catch (Exception ex)
             {
-                UserId = targetUserId,
-                TriggerType = "FollowReceived"
-            });
+                _logger.LogWarning(
+                    ex,
+                    "Follow was saved, but follow side-effects failed. FollowerId={FollowerId}, FollowingId={FollowingId}",
+                    currentUserId,
+                    targetUserId);
+            }
         }
         public async Task UnfollowAsync(int currentUserId, int targetUserId)
         {
@@ -155,6 +166,52 @@ namespace Progressio.Services.Services
                 TotalCount = totalCount,
                 Page = search.Page,
                 PageSize = pageSize
+            };
+        }
+
+        public async Task<PagedResult<UserSearchResponse>> SearchUsersAsync(
+            int currentUserId,
+            UserSearchObject search)
+        {
+            var queryText = search.Query?.Trim();
+            if (string.IsNullOrWhiteSpace(queryText) || queryText.Length < 2)
+                throw new BusinessException("Enter at least 2 characters to search for a user.");
+
+            var usersQuery = _db.Users
+                .AsNoTracking()
+                .Where(u => u.IsActive && u.Id != currentUserId)
+                .Where(u =>
+                    u.UserName!.Contains(queryText) ||
+                    u.FirstName.Contains(queryText) ||
+                    u.LastName.Contains(queryText) ||
+                    (u.FirstName + " " + u.LastName).Contains(queryText));
+
+            var totalCount = await usersQuery.CountAsync();
+            var items = await usersQuery
+                .OrderBy(u => u.FirstName)
+                .ThenBy(u => u.LastName)
+                .ThenBy(u => u.UserName)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
+                .Select(u => new UserSearchResponse
+                {
+                    Id = u.Id,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    Username = u.UserName!,
+                    ProfileImageUrl = u.ProfileImageUrl,
+                    IsProfilePublic = u.IsProfilePublic,
+                    IsFollowedByCurrentUser = _db.UserFollows.Any(f =>
+                        f.FollowerId == currentUserId && f.FollowingId == u.Id)
+                })
+                .ToListAsync();
+
+            return new PagedResult<UserSearchResponse>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
             };
         }
 

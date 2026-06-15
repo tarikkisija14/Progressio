@@ -6,19 +6,14 @@ using Progressio.Model.Exceptions;
 using Progressio.Model.Messages;
 using Progressio.Model.Requests.ProgressRequests;
 using Progressio.Model.Responses.ProgressResponses;
+using Progressio.Model.SearchObjects;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
 using Progressio.Services.Messaging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Progressio.Services.Services
 {
     public class ProgressService : IProgressService
-
     {
         private readonly ApplicationDbContext _db;
         private readonly IStateMachineService _stateMachine;
@@ -33,14 +28,14 @@ namespace Progressio.Services.Services
         private const string NotificationsQueue = "send_notification";
 
         public ProgressService(
-        ApplicationDbContext db,
-        IStateMachineService stateMachine,
-        IRabbitMqPublisher publisher,
-        ILogger<ProgressService> logger,
-        IValidator<StartProgressRequest> startValidator,
-        IValidator<ChangeStatusRequest> changeStatusValidator,
-        IValidator<MarkEpisodeRequest> markEpisodeValidator,
-        IValidator<MarkChapterRequest> markChapterValidator)
+            ApplicationDbContext db,
+            IStateMachineService stateMachine,
+            IRabbitMqPublisher publisher,
+            ILogger<ProgressService> logger,
+            IValidator<StartProgressRequest> startValidator,
+            IValidator<ChangeStatusRequest> changeStatusValidator,
+            IValidator<MarkEpisodeRequest> markEpisodeValidator,
+            IValidator<MarkChapterRequest> markChapterValidator)
         {
             _db = db;
             _stateMachine = stateMachine;
@@ -65,12 +60,24 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(c => c.Id == request.ContentId && c.IsActive)
                 ?? throw new NotFoundException("Content", request.ContentId);
 
-
             var existing = await _db.UserContentProgresses
+                .Include(p => p.Content).ThenInclude(c => c.ContentType)
+                .Include(p => p.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)
+                .Include(p => p.Content).ThenInclude(c => c.Chapters)
+                .Include(p => p.EpisodeProgresses)
+                .Include(p => p.ChapterProgresses)
                 .FirstOrDefaultAsync(p => p.UserId == userId && p.ContentId == request.ContentId);
 
             if (existing is not null)
-                throw new BusinessException("Progress for this content already exists.");
+            {
+                if (existing.Status == ProgressStatus.Cancelled || existing.Status == ProgressStatus.Completed)
+                {
+                    _stateMachine.Transition(existing, ProgressStatus.InProgress, userId);
+                    await _db.SaveChangesAsync();
+                }
+
+                return BuildProgressResponse(existing);
+            }
 
             var progress = new UserContentProgress
             {
@@ -79,7 +86,6 @@ namespace Progressio.Services.Services
                 Status = ProgressStatus.Pending
             };
 
-
             _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
 
             _db.UserContentProgresses.Add(progress);
@@ -87,12 +93,23 @@ namespace Progressio.Services.Services
 
             _logger.LogInformation("User {UserId} started progress for Content {ContentId}", userId, request.ContentId);
 
-            _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
+            try
             {
-                UserId = userId,
-                TriggerType = "StatusChanged",
-                ContentId = request.ContentId
-            });
+                await _publisher.PublishAsync(AchievementsQueue, new CheckAchievementsMessage
+                {
+                    UserId = userId,
+                    TriggerType = "StatusChanged",
+                    ContentId = request.ContentId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Progress was started, but achievement side-effect failed. UserId={UserId}, ContentId={ContentId}",
+                    userId,
+                    request.ContentId);
+            }
 
             return await BuildProgressResponseAsync(progress, content);
         }
@@ -112,7 +129,6 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(p => p.Id == progressId)
                 ?? throw new NotFoundException("Progress", progressId);
 
-
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only change your own progress.");
 
@@ -122,16 +138,28 @@ namespace Progressio.Services.Services
             _logger.LogInformation("User {UserId} changed Progress {ProgressId} to {Status}",
                 userId, progressId, request.NewStatus);
 
-            _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
+            try
             {
-                UserId = userId,
-                TriggerType = "StatusChanged",
-                ContentId = progress.ContentId
-            });
+                await _publisher.PublishAsync(AchievementsQueue, new CheckAchievementsMessage
+                {
+                    UserId = userId,
+                    TriggerType = "StatusChanged",
+                    ContentId = progress.ContentId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Progress status was changed, but achievement side-effect failed. UserId={UserId}, ProgressId={ProgressId}",
+                    userId,
+                    progressId);
+            }
 
             return BuildProgressResponse(progress);
         }
-        public async Task<ProgressResponse> GetProgressAsync(int userId, int contentId)
+
+        public async Task<ProgressResponse?> GetProgressAsync(int userId, int contentId)
         {
             var progress = await _db.UserContentProgresses
                 .Include(p => p.Content).ThenInclude(c => c.ContentType)
@@ -139,29 +167,39 @@ namespace Progressio.Services.Services
                 .Include(p => p.Content).ThenInclude(c => c.Chapters)
                 .Include(p => p.EpisodeProgresses)
                 .Include(p => p.ChapterProgresses)
-                .FirstOrDefaultAsync(p => p.UserId == userId && p.ContentId == contentId)
-                ?? throw new NotFoundException("Progress for this content", contentId);
+                .FirstOrDefaultAsync(p => p.UserId == userId && p.ContentId == contentId);
 
-            return BuildProgressResponse(progress);
+            return progress == null ? null : BuildProgressResponse(progress);
         }
 
-        public async Task<List<ProgressResponse>> GetMyProgressesAsync(int userId)
+        public async Task<PagedResult<ProgressResponse>> GetMyProgressesAsync(int userId, BaseSearchObject search)
         {
-            var progresses = await _db.UserContentProgresses
+            var query = _db.UserContentProgresses
+                .AsNoTracking()
+                .Where(p => p.UserId == userId);
+
+            var totalCount = await query.CountAsync();
+            var progresses = await query
                 .Include(p => p.Content).ThenInclude(c => c.ContentType)
                 .Include(p => p.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)
                 .Include(p => p.Content).ThenInclude(c => c.Chapters)
                 .Include(p => p.EpisodeProgresses)
                 .Include(p => p.ChapterProgresses)
-                .Where(p => p.UserId == userId)
                 .OrderByDescending(p => p.LastActivityAt)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
                 .ToListAsync();
 
-            return progresses.Select(BuildProgressResponse).ToList();
+            return new PagedResult<ProgressResponse>
+            {
+                Items = progresses.Select(BuildProgressResponse).ToList(),
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
         }
 
-        public async Task<EpisodeProgressResponse> MarkEpisodeAsync(
-        int userId, int progressId, MarkEpisodeRequest request)
+        public async Task<EpisodeProgressResponse> MarkEpisodeAsync(int userId, int progressId, MarkEpisodeRequest request)
         {
             var validationResult = await _markEpisodeValidator.ValidateAsync(request);
             if (!validationResult.IsValid)
@@ -170,6 +208,7 @@ namespace Progressio.Services.Services
             var progress = await _db.UserContentProgresses
                 .Include(p => p.Content).ThenInclude(c => c.ContentType)
                 .Include(p => p.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)
+                .Include(p => p.Content).ThenInclude(c => c.Chapters)
                 .Include(p => p.ChapterProgresses)
                 .Include(p => p.EpisodeProgresses)
                 .FirstOrDefaultAsync(p => p.Id == progressId)
@@ -178,18 +217,19 @@ namespace Progressio.Services.Services
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only update your own progress.");
 
-            if (progress.Status == ProgressStatus.Completed || progress.Status == ProgressStatus.Cancelled)
+            if (progress.Status == ProgressStatus.Cancelled)
                 throw new BusinessException($"Cannot mark episode on progress with status '{progress.Status}'.");
 
+            if (progress.Status == ProgressStatus.Completed && request.IsWatched)
+                _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
 
             var episode = await _db.Episodes
                 .Include(e => e.Season)
                 .FirstOrDefaultAsync(e => e.Id == request.EpisodeId && e.Season.ContentId == progress.ContentId)
                 ?? throw new NotFoundException("Episode", request.EpisodeId);
 
-
             var ep = progress.EpisodeProgresses.FirstOrDefault(x => x.EpisodeId == request.EpisodeId);
-            bool isNewlyWatched = false;
+            var isNewlyWatched = false;
 
             if (ep is null)
             {
@@ -200,6 +240,7 @@ namespace Progressio.Services.Services
                     IsWatched = request.IsWatched,
                     WatchedAt = request.IsWatched ? DateTime.UtcNow : null
                 };
+
                 _db.EpisodeProgresses.Add(ep);
                 isNewlyWatched = request.IsWatched;
             }
@@ -212,41 +253,86 @@ namespace Progressio.Services.Services
 
             progress.LastActivityAt = DateTime.UtcNow;
 
-
             if (isNewlyWatched)
                 await UpdateStreakAsync(userId);
 
+            var autoCompleted = CheckAndAutocomplete(progress);
             await _db.SaveChangesAsync();
 
-
-            await CheckAndAutocompleteAsync(progress);
-
-            _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
+            try
             {
-                UserId = userId,
-                TriggerType = "EpisodeWatched",
-                ContentId = progress.ContentId
-            });
+                await _publisher.PublishAsync(AchievementsQueue, new CheckAchievementsMessage
+                {
+                    UserId = userId,
+                    TriggerType = "EpisodeWatched",
+                    ContentId = progress.ContentId
+                });
+
+                if (autoCompleted)
+                    await PublishAutoCompletedEventsAsync(progress);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Episode progress was saved, but side-effects failed. UserId={UserId}, ProgressId={ProgressId}, EpisodeId={EpisodeId}",
+                    userId,
+                    progressId,
+                    request.EpisodeId);
+            }
 
             return MapEpisodeProgress(ep, episode);
         }
-        public async Task<List<EpisodeProgressResponse>> GetEpisodeProgressesAsync(int userId, int progressId)
+
+        public async Task<PagedResult<EpisodeProgressResponse>> GetEpisodeProgressesAsync(
+            int userId,
+            int progressId,
+            BaseSearchObject search)
         {
-            var progress = await _db.UserContentProgresses
-                .Include(p => p.EpisodeProgresses).ThenInclude(ep => ep.Episode).ThenInclude(e => e.Season)
-                .FirstOrDefaultAsync(p => p.Id == progressId)
-                ?? throw new NotFoundException("Progress", progressId);
+            var ownsProgress = await _db.UserContentProgresses
+                .AnyAsync(p => p.Id == progressId && p.UserId == userId);
 
-            if (progress.UserId != userId)
+            if (!ownsProgress)
+            {
+                var exists = await _db.UserContentProgresses.AnyAsync(p => p.Id == progressId);
+                if (!exists)
+                    throw new NotFoundException("Progress", progressId);
+
                 throw new ForbiddenException("You can only view your own progress.");
+            }
 
-            return progress.EpisodeProgresses
-                .Select(ep => MapEpisodeProgress(ep, ep.Episode))
-                .OrderBy(r => r.SeasonNumber).ThenBy(r => r.EpisodeNumber)
-                .ToList();
+            var query = _db.EpisodeProgresses
+                .AsNoTracking()
+                .Where(ep => ep.ProgressId == progressId);
+
+            var totalCount = await query.CountAsync();
+            var items = await query
+                .OrderBy(ep => ep.Episode.Season.SeasonNumber)
+                .ThenBy(ep => ep.Episode.EpisodeNumber)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
+                .Select(ep => new EpisodeProgressResponse
+                {
+                    Id = ep.Id,
+                    EpisodeId = ep.EpisodeId,
+                    EpisodeTitle = ep.Episode.Title,
+                    SeasonNumber = ep.Episode.Season.SeasonNumber,
+                    EpisodeNumber = ep.Episode.EpisodeNumber,
+                    IsWatched = ep.IsWatched,
+                    WatchedAt = ep.WatchedAt
+                })
+                .ToListAsync();
+
+            return new PagedResult<EpisodeProgressResponse>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
         }
-        public async Task<ChapterProgressResponse> MarkChapterAsync(
-        int userId, int progressId, MarkChapterRequest request)
+
+        public async Task<ChapterProgressResponse> MarkChapterAsync(int userId, int progressId, MarkChapterRequest request)
         {
             var validationResult = await _markChapterValidator.ValidateAsync(request);
             if (!validationResult.IsValid)
@@ -254,6 +340,7 @@ namespace Progressio.Services.Services
 
             var progress = await _db.UserContentProgresses
                 .Include(p => p.Content).ThenInclude(c => c.Chapters)
+                .Include(p => p.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)
                 .Include(p => p.EpisodeProgresses)
                 .Include(p => p.ChapterProgresses)
                 .FirstOrDefaultAsync(p => p.Id == progressId)
@@ -262,15 +349,18 @@ namespace Progressio.Services.Services
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only update your own progress.");
 
-            if (progress.Status == ProgressStatus.Completed || progress.Status == ProgressStatus.Cancelled)
+            if (progress.Status == ProgressStatus.Cancelled)
                 throw new BusinessException($"Cannot mark chapter on progress with status '{progress.Status}'.");
+
+            if (progress.Status == ProgressStatus.Completed && request.IsRead)
+                _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
 
             var chapter = await _db.Chapters
                 .FirstOrDefaultAsync(c => c.Id == request.ChapterId && c.ContentId == progress.ContentId)
                 ?? throw new NotFoundException("Chapter", request.ChapterId);
 
             var cp = progress.ChapterProgresses.FirstOrDefault(x => x.ChapterId == request.ChapterId);
-            bool isNewlyRead = false;
+            var isNewlyRead = false;
 
             if (cp is null)
             {
@@ -281,6 +371,7 @@ namespace Progressio.Services.Services
                     IsRead = request.IsRead,
                     ReadAt = request.IsRead ? DateTime.UtcNow : null
                 };
+
                 _db.ChapterProgresses.Add(cp);
                 isNewlyRead = request.IsRead;
             }
@@ -296,34 +387,80 @@ namespace Progressio.Services.Services
             if (isNewlyRead)
                 await UpdateStreakAsync(userId);
 
+            var autoCompleted = CheckAndAutocomplete(progress);
             await _db.SaveChangesAsync();
 
-            await CheckAndAutocompleteAsync(progress);
-
-            _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
+            try
             {
-                UserId = userId,
-                TriggerType = "ChapterRead",
-                ContentId = progress.ContentId
-            });
+                await _publisher.PublishAsync(AchievementsQueue, new CheckAchievementsMessage
+                {
+                    UserId = userId,
+                    TriggerType = "ChapterRead",
+                    ContentId = progress.ContentId
+                });
+
+                if (autoCompleted)
+                    await PublishAutoCompletedEventsAsync(progress);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Chapter progress was saved, but side-effects failed. UserId={UserId}, ProgressId={ProgressId}, ChapterId={ChapterId}",
+                    userId,
+                    progressId,
+                    request.ChapterId);
+            }
 
             return MapChapterProgress(cp, chapter);
         }
-        public async Task<List<ChapterProgressResponse>> GetChapterProgressesAsync(int userId, int progressId)
+
+        public async Task<PagedResult<ChapterProgressResponse>> GetChapterProgressesAsync(
+            int userId,
+            int progressId,
+            BaseSearchObject search)
         {
-            var progress = await _db.UserContentProgresses
-                .Include(p => p.ChapterProgresses).ThenInclude(cp => cp.Chapter)
-                .FirstOrDefaultAsync(p => p.Id == progressId)
-                ?? throw new NotFoundException("Progress", progressId);
+            var ownsProgress = await _db.UserContentProgresses
+                .AnyAsync(p => p.Id == progressId && p.UserId == userId);
 
-            if (progress.UserId != userId)
+            if (!ownsProgress)
+            {
+                var exists = await _db.UserContentProgresses.AnyAsync(p => p.Id == progressId);
+                if (!exists)
+                    throw new NotFoundException("Progress", progressId);
+
                 throw new ForbiddenException("You can only view your own progress.");
+            }
 
-            return progress.ChapterProgresses
-                .Select(cp => MapChapterProgress(cp, cp.Chapter))
-                .OrderBy(r => r.ChapterNumber)
-                .ToList();
+            var query = _db.ChapterProgresses
+                .AsNoTracking()
+                .Where(cp => cp.ProgressId == progressId);
+
+            var totalCount = await query.CountAsync();
+            var items = await query
+                .OrderBy(cp => cp.Chapter.ChapterNumber)
+                .Skip((search.Page - 1) * search.PageSize)
+                .Take(search.PageSize)
+                .Select(cp => new ChapterProgressResponse
+                {
+                    Id = cp.Id,
+                    ChapterId = cp.ChapterId,
+                    ChapterTitle = cp.Chapter.Title,
+                    ChapterNumber = cp.Chapter.ChapterNumber,
+                    IsRead = cp.IsRead,
+                    ReadAt = cp.ReadAt
+                })
+                .ToListAsync();
+
+            return new PagedResult<ChapterProgressResponse>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = search.Page,
+                PageSize = search.PageSize
+            };
         }
+
         public async Task<StreakResponse> GetMyStreakAsync(int userId)
         {
             var streak = await _db.UserStreaks.FirstOrDefaultAsync(s => s.UserId == userId)
@@ -336,6 +473,7 @@ namespace Progressio.Services.Services
                 LastActivityDate = streak.LastActivityDate
             };
         }
+
         private async Task UpdateStreakAsync(int userId)
         {
             var streak = await _db.UserStreaks.FirstOrDefaultAsync(s => s.UserId == userId);
@@ -345,7 +483,6 @@ namespace Progressio.Services.Services
 
             if (streak.LastActivityDate is null)
             {
-
                 streak.CurrentStreak = 1;
                 streak.LongestStreak = Math.Max(streak.LongestStreak, 1);
                 streak.LastActivityDate = today;
@@ -356,11 +493,11 @@ namespace Progressio.Services.Services
 
                 if (lastDate == today)
                 {
-
+                    return;
                 }
-                else if (lastDate == today.AddDays(-1))
-                {
 
+                if (lastDate == today.AddDays(-1))
+                {
                     streak.CurrentStreak++;
                     if (streak.CurrentStreak > streak.LongestStreak)
                         streak.LongestStreak = streak.CurrentStreak;
@@ -368,44 +505,49 @@ namespace Progressio.Services.Services
                 }
                 else
                 {
-
                     streak.CurrentStreak = 1;
                     streak.LastActivityDate = today;
                 }
             }
         }
-        private async Task CheckAndAutocompleteAsync(UserContentProgress progress)
+
+        private bool CheckAndAutocomplete(UserContentProgress progress)
         {
-            if (progress.Status != ProgressStatus.InProgress) return;
+            if (progress.Status != ProgressStatus.InProgress) return false;
 
             var totalEpisodes = progress.Content.Seasons.SelectMany(s => s.Episodes).Count();
             var totalChapters = progress.Content.Chapters.Count;
 
-
-            if (totalEpisodes == 0 && totalChapters == 0) return;
+            if (totalEpisodes == 0 && totalChapters == 0) return false;
 
             var watchedEpisodes = progress.EpisodeProgresses.Count(e => e.IsWatched);
             var readChapters = progress.ChapterProgresses.Count(c => c.IsRead);
 
-            bool allDone = (totalEpisodes == 0 || watchedEpisodes >= totalEpisodes)
-                        && (totalChapters == 0 || readChapters >= totalChapters);
+            var allDone = (totalEpisodes == 0 || watchedEpisodes >= totalEpisodes)
+                       && (totalChapters == 0 || readChapters >= totalChapters);
 
-            if (!allDone) return;
+            if (!allDone) return false;
 
             _stateMachine.Transition(progress, ProgressStatus.Completed, progress.UserId);
-            await _db.SaveChangesAsync();
 
-            _logger.LogInformation("AutoCompleted Progress {ProgressId} for User {UserId}",
-                progress.Id, progress.UserId);
+            _logger.LogInformation(
+                "AutoCompleted Progress {ProgressId} for User {UserId}",
+                progress.Id,
+                progress.UserId);
 
-            _publisher.Publish(AchievementsQueue, new CheckAchievementsMessage
+            return true;
+        }
+
+        private async Task PublishAutoCompletedEventsAsync(UserContentProgress progress)
+        {
+            await _publisher.PublishAsync(AchievementsQueue, new CheckAchievementsMessage
             {
                 UserId = progress.UserId,
                 TriggerType = "StatusChanged",
                 ContentId = progress.ContentId
             });
 
-            _publisher.Publish(NotificationsQueue, new SendNotificationMessage
+            await _publisher.PublishAsync(NotificationsQueue, new SendNotificationMessage
             {
                 UserId = progress.UserId,
                 Title = "Čestitamo! 🎉",
@@ -414,6 +556,7 @@ namespace Progressio.Services.Services
                 RelatedEntityId = progress.ContentId
             });
         }
+
         private static ProgressResponse BuildProgressResponse(UserContentProgress p)
         {
             var totalEpisodes = p.Content.Seasons.SelectMany(s => s.Episodes).Count();
@@ -439,10 +582,9 @@ namespace Progressio.Services.Services
                 TotalChaptersCount = totalChapters
             };
         }
-        private async Task<ProgressResponse> BuildProgressResponseAsync(
-        UserContentProgress p, Content content)
-        {
 
+        private async Task<ProgressResponse> BuildProgressResponseAsync(UserContentProgress p, Content content)
+        {
             var full = await _db.UserContentProgresses
                 .Include(x => x.Content).ThenInclude(c => c.ContentType)
                 .Include(x => x.Content).ThenInclude(c => c.Seasons).ThenInclude(s => s.Episodes)
@@ -455,27 +597,26 @@ namespace Progressio.Services.Services
         }
 
         private static EpisodeProgressResponse MapEpisodeProgress(EpisodeProgress ep, Episode episode)
-        => new()
-        {
-            Id = ep.Id,
-            EpisodeId = ep.EpisodeId,
-            EpisodeTitle = episode.Title,
-            EpisodeNumber = episode.EpisodeNumber,
-            SeasonNumber = episode.Season?.SeasonNumber ?? 0,
-            IsWatched = ep.IsWatched,
-            WatchedAt = ep.WatchedAt
-        };
+            => new()
+            {
+                Id = ep.Id,
+                EpisodeId = ep.EpisodeId,
+                EpisodeTitle = episode.Title,
+                EpisodeNumber = episode.EpisodeNumber,
+                SeasonNumber = episode.Season?.SeasonNumber ?? 0,
+                IsWatched = ep.IsWatched,
+                WatchedAt = ep.WatchedAt
+            };
 
         private static ChapterProgressResponse MapChapterProgress(ChapterProgress cp, Chapter chapter)
-        => new()
-        {
-            Id = cp.Id,
-            ChapterId = cp.ChapterId,
-            ChapterTitle = chapter.Title,
-            ChapterNumber = chapter.ChapterNumber,
-            IsRead = cp.IsRead,
-            ReadAt = cp.ReadAt
-        };
-
+            => new()
+            {
+                Id = cp.Id,
+                ChapterId = cp.ChapterId,
+                ChapterTitle = chapter.Title,
+                ChapterNumber = chapter.ChapterNumber,
+                IsRead = cp.IsRead,
+                ReadAt = cp.ReadAt
+            };
     }
 }

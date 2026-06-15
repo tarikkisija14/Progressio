@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
+using Progressio.Services.Configuration;
 
 namespace Progressio.Worker.Consumers;
 
@@ -12,6 +13,13 @@ public class EmailConsumer : BackgroundService
 {
     private readonly ILogger<EmailConsumer> _logger;
     private readonly IConfiguration _configuration;
+    private readonly string _smtpHost;
+    private readonly int _smtpPort;
+    private readonly string _smtpUsername;
+    private readonly string _smtpPassword;
+    private readonly string _fromEmail;
+    private readonly string _fromName;
+    private readonly bool _useSsl;
 
     private IConnection? _connection;
     private IChannel? _channel;
@@ -27,6 +35,13 @@ public class EmailConsumer : BackgroundService
     {
         _logger = logger;
         _configuration = configuration;
+        _smtpHost = configuration.GetRequiredValue("Smtp:Host");
+        _smtpPort = configuration.GetRequiredInt("Smtp:Port");
+        _smtpUsername = configuration.GetRequiredValue("Smtp:Username");
+        _smtpPassword = configuration.GetRequiredValue("Smtp:Password");
+        _fromEmail = configuration.GetRequiredValue("Smtp:FromEmail");
+        _fromName = configuration.GetRequiredValue("Smtp:FromName");
+        _useSsl = configuration.GetRequiredBool("Smtp:UseSsl");
     }
 
     public override async Task StartAsync(CancellationToken cancellationToken)
@@ -110,22 +125,15 @@ public class EmailConsumer : BackgroundService
 
     private async Task SendEmailAsync(SendEmailMessage message, CancellationToken ct)
     {
-        var smtpHost = _configuration["Smtp:Host"] ?? "localhost";
-        var smtpPort = int.Parse(_configuration["Smtp:Port"] ?? "587");
-        var smtpUser = _configuration["Smtp:Username"] ?? "";
-        var smtpPass = _configuration["Smtp:Password"] ?? "";
-        var fromEmail = _configuration["Smtp:FromEmail"] ?? "noreply@progressio.app";
-        var fromName = _configuration["Smtp:FromName"] ?? "Progressio";
-
-        using var client = new SmtpClient(smtpHost, smtpPort)
+        using var client = new SmtpClient(_smtpHost, _smtpPort)
         {
-            Credentials = new NetworkCredential(smtpUser, smtpPass),
-            EnableSsl = true
+            Credentials = new NetworkCredential(_smtpUsername, _smtpPassword),
+            EnableSsl = _useSsl
         };
 
         using var mail = new MailMessage
         {
-            From = new MailAddress(fromEmail, fromName),
+            From = new MailAddress(_fromEmail, _fromName),
             Subject = message.Subject,
             Body = message.Body,
             IsBodyHtml = false

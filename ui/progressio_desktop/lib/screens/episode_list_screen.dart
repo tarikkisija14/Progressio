@@ -7,6 +7,7 @@ import 'package:progressio_desktop/model/episode.dart';
 import 'package:progressio_desktop/model/season.dart';
 import 'package:progressio_desktop/providers/episode_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 import 'package:progressio_desktop/utils/utils.dart';
 
 class EpisodeListScreen extends StatefulWidget {
@@ -33,10 +34,10 @@ class _EpisodeListScreenState extends State<EpisodeListScreen> {
   Future<void> _loadEpisodes() async {
     setState(() => _loading = true);
     try {
-      final result = await _episodeProvider.get(
-        filter: {'seasonId': widget.season.id, 'pageSize': 200},
+      final items = await _episodeProvider.getAll(
+        filter: {'seasonId': widget.season.id},
       );
-      setState(() => _episodes = result.items ?? []);
+      if (mounted) setState(() => _episodes = items);
     } catch (e) {
       _showError(e.toString());
     } finally {
@@ -185,6 +186,7 @@ class _EpisodeListScreenState extends State<EpisodeListScreen> {
   }
 
   Future<void> _deleteEpisode(Episode episode) async {
+    if (!await showDeleteConfirmation(context, itemName: episode.title)) return;
     try {
       await _episodeProvider.delete(episode.id);
       ScaffoldMessenger.of(context).showSnackBar(

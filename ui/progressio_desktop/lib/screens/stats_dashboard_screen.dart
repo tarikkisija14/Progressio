@@ -28,15 +28,16 @@ class _StatsDashboardScreenState extends State<StatsDashboardScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final data = await _dashboardProvider.getDashboard();
-      setState(() => _dashboard = data);
+      if (mounted) setState(() => _dashboard = data);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -169,9 +170,7 @@ class _StatsDashboardScreenState extends State<StatsDashboardScreen> {
                 : '0',
             icon: Icons.movie_rounded,
             color: AppColors.secondary,
-            subtitle: d.topContent.isNotEmpty
-                ? d.topContent.first.title
-                : '',
+            subtitle: d.topContent.isNotEmpty ? d.topContent.first.title : '',
           ),
         ),
         const SizedBox(width: 14),
@@ -293,8 +292,8 @@ class _StatsDashboardScreenState extends State<StatsDashboardScreen> {
                   toY: items[i].count.toDouble(),
                   color: AppColors.primary,
                   width: 18,
-                  borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(4)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(4)),
                 ),
               ],
             );
@@ -320,8 +319,7 @@ class _StatsDashboardScreenState extends State<StatsDashboardScreen> {
           child: DataTable(
             headingRowColor:
                 const WidgetStatePropertyAll(AppColors.surface),
-            dataRowColor:
-                const WidgetStatePropertyAll(AppColors.card),
+            dataRowColor: const WidgetStatePropertyAll(AppColors.card),
             columns: const [
               DataColumn(label: Text('#')),
               DataColumn(label: Text('Title')),
@@ -362,7 +360,8 @@ class _StatsDashboardScreenState extends State<StatsDashboardScreen> {
                 )),
                 DataCell(Text(
                   item.followerCount.toString(),
-                  style: const TextStyle(color: AppColors.textSecondary),
+                  style:
+                      const TextStyle(color: AppColors.textSecondary),
                 )),
               ]);
             }),
@@ -473,8 +472,7 @@ class _StatsDashboardScreenState extends State<StatsDashboardScreen> {
           child: DataTable(
             headingRowColor:
                 const WidgetStatePropertyAll(AppColors.surface),
-            dataRowColor:
-                const WidgetStatePropertyAll(AppColors.card),
+            dataRowColor: const WidgetStatePropertyAll(AppColors.card),
             columns: const [
               DataColumn(label: Text('Title')),
               DataColumn(label: Text('Content')),
@@ -540,8 +538,7 @@ class _StatsDashboardScreenState extends State<StatsDashboardScreen> {
         color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(type,
-          style: TextStyle(color: color, fontSize: 12)),
+      child: Text(type, style: TextStyle(color: color, fontSize: 12)),
     );
   }
 
@@ -619,8 +616,7 @@ class _KpiCard extends StatelessWidget {
                   Text(
                     subtitle!,
                     style: const TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 11),
+                        color: AppColors.textMuted, fontSize: 11),
                     overflow: TextOverflow.ellipsis,
                   ),
               ],

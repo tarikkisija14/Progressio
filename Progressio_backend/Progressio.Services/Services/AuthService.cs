@@ -7,10 +7,14 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Progressio.Commom.Services;
 using Progressio.Model.Exceptions;
+using Progressio.Model.Messages;
 using Progressio.Model.Requests.AuthRequests;
 using Progressio.Model.Responses.AuthResponses;
+using Progressio.Services.Configuration;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
+using Progressio.Services.Messaging;
+using Progressio.Services.Security;
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
@@ -25,20 +29,40 @@ namespace Progressio.Services.Services
     {
         private readonly ApplicationDbContext _db;
         private readonly UserManager<AppUser> _userManager;
-        private readonly IConfiguration _configuration;
         private readonly CryptoService _crypto;
+        private readonly string _jwtKey;
+        private readonly string _jwtIssuer;
+        private readonly string _jwtAudience;
+        private readonly string _profileUploadPath;
         private readonly IValidator<RegisterRequest> _registerValidator;
         private readonly IValidator<ChangePasswordRequest> _changePasswordValidator;
         private readonly ILogger<AuthService> _logger;
+        private readonly IValidator<ForgotPasswordRequest> _forgotPasswordValidator;
+        private readonly IValidator<ResetPasswordRequest> _resetPasswordValidator;
+        private readonly IValidator<UpdateProfileRequest> _updateProfileValidator;
+        private readonly IRabbitMqPublisher _publisher;
+
+        private const string EmailQueue = "email.send";
 
         private static readonly string[] AllowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
 
-        private static bool IsAllowedImageMagicBytes(byte[] header)
+        private static bool IsAllowedImageMagicBytes(byte[] header, int bytesRead)
         {
-            if (header.Length < 4) return false;
-            bool isJpeg = header[0] == 0xFF && header[1] == 0xD8;
-            bool isPng = header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47;
-            bool isWebP = header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46;
+            if (bytesRead < 4)
+                return false;
+
+            var isJpeg = header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF;
+            var isPng = bytesRead >= 8 &&
+                        header[0] == 0x89 && header[1] == 0x50 &&
+                        header[2] == 0x4E && header[3] == 0x47 &&
+                        header[4] == 0x0D && header[5] == 0x0A &&
+                        header[6] == 0x1A && header[7] == 0x0A;
+            var isWebP = bytesRead >= 12 &&
+                         header[0] == 0x52 && header[1] == 0x49 &&
+                         header[2] == 0x46 && header[3] == 0x46 &&
+                         header[8] == 0x57 && header[9] == 0x45 &&
+                         header[10] == 0x42 && header[11] == 0x50;
+
             return isJpeg || isPng || isWebP;
         }
 
@@ -49,14 +73,25 @@ namespace Progressio.Services.Services
             CryptoService crypto,
             IValidator<RegisterRequest> registerValidator,
             IValidator<ChangePasswordRequest> changePasswordValidator,
+            IValidator<ForgotPasswordRequest> forgotPasswordValidator,
+            IValidator<ResetPasswordRequest> resetPasswordValidator,
+            IValidator<UpdateProfileRequest> updateProfileValidator,
+            IRabbitMqPublisher publisher,
             ILogger<AuthService> logger)
         {
             _db = db;
             _userManager = userManager;
-            _configuration = configuration;
             _crypto = crypto;
+            _jwtKey = configuration.GetRequiredValue("Jwt:Key");
+            _jwtIssuer = configuration.GetRequiredValue("Jwt:Issuer");
+            _jwtAudience = configuration.GetRequiredValue("Jwt:Audience");
+            _profileUploadPath = configuration.GetRequiredValue("UploadPath");
             _registerValidator = registerValidator;
             _changePasswordValidator = changePasswordValidator;
+            _forgotPasswordValidator = forgotPasswordValidator;
+            _resetPasswordValidator = resetPasswordValidator;
+            _updateProfileValidator = updateProfileValidator;
+            _publisher = publisher;
             _logger = logger;
         }
 
@@ -65,6 +100,8 @@ namespace Progressio.Services.Services
             var validationResult = await _registerValidator.ValidateAsync(request);
             if (!validationResult.IsValid)
                 throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
+            await using var transaction = await _db.Database.BeginTransactionAsync();
 
             var user = new AppUser
             {
@@ -77,14 +114,16 @@ namespace Progressio.Services.Services
                 IsProfilePublic = true
             };
 
-            var result = await _userManager.CreateAsync(user, request.Password);
-            if (!result.Succeeded)
+            var createResult = await _userManager.CreateAsync(user, request.Password);
+            if (!createResult.Succeeded)
             {
-                var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+                var errors = string.Join("; ", createResult.Errors.Select(e => e.Description));
                 throw new BusinessException(errors);
             }
 
-            await _userManager.AddToRoleAsync(user, AppRoles.User);
+            var roleResult = await _userManager.AddToRoleAsync(user, AppRoles.User);
+            if (!roleResult.Succeeded)
+                throw new BusinessException(string.Join("; ", roleResult.Errors.Select(e => e.Description)));
 
             _db.UserStreaks.Add(new UserStreak
             {
@@ -95,9 +134,11 @@ namespace Progressio.Services.Services
             });
             await _db.SaveChangesAsync();
 
-            _logger.LogInformation("New user registered: {Username} (Id={UserId})", user.UserName, user.Id);
+            var response = await GenerateTokenResponseAsync(user);
+            await transaction.CommitAsync();
 
-            return await GenerateTokenResponseAsync(user);
+            _logger.LogInformation("New user registered: {Username} (Id={UserId})", user.UserName, user.Id);
+            return response;
         }
 
         public async Task<LoginResponse> LoginAsync(LoginRequest request)
@@ -117,8 +158,9 @@ namespace Progressio.Services.Services
 
         public async Task<LoginResponse> RefreshTokenAsync(string refreshToken)
         {
-            var tokenHash = _crypto.HashToken(refreshToken);
+            await using var transaction = await _db.Database.BeginTransactionAsync();
 
+            var tokenHash = _crypto.HashToken(refreshToken);
             var storedToken = await _db.RefreshTokens
                 .Include(rt => rt.User)
                 .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash
@@ -134,21 +176,109 @@ namespace Progressio.Services.Services
             storedToken.RevokedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
 
-            return await GenerateTokenResponseAsync(storedToken.User);
+            var response = await GenerateTokenResponseAsync(storedToken.User);
+            await transaction.CommitAsync();
+            return response;
         }
 
-        public async Task LogoutAsync(string refreshToken)
+        public async Task LogoutAsync(int userId, string refreshToken)
         {
-            var tokenHash = _crypto.HashToken(refreshToken);
+            await using var transaction = await _db.Database.BeginTransactionAsync();
 
-            var storedToken = await _db.RefreshTokens
-                .FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash && rt.RevokedAt == null);
+            var suppliedTokenHash = _crypto.HashToken(refreshToken);
+            var suppliedTokenBelongsToUser = await _db.RefreshTokens
+                .AnyAsync(rt => rt.TokenHash == suppliedTokenHash && rt.UserId == userId);
 
-            if (storedToken is not null)
+            if (!suppliedTokenBelongsToUser)
+                throw new UnauthorizedException("Invalid refresh token.");
+
+            var activeTokens = await _db.RefreshTokens
+                .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
+                .ToListAsync();
+
+            var revokedAt = DateTime.UtcNow;
+            foreach (var token in activeTokens)
+                token.RevokedAt = revokedAt;
+
+            var user = await _userManager.FindByIdAsync(userId.ToString())
+                ?? throw new NotFoundException("User", userId);
+
+            var stampResult = await _userManager.UpdateSecurityStampAsync(user);
+            if (!stampResult.Succeeded)
+                throw new BusinessException(string.Join("; ", stampResult.Errors.Select(e => e.Description)));
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation(
+                "User {UserId} logged out. {TokenCount} refresh tokens and all access tokens were invalidated.",
+                userId,
+                activeTokens.Count);
+        }
+
+        public async Task RequestPasswordResetAsync(ForgotPasswordRequest request)
+        {
+            var validationResult = await _forgotPasswordValidator.ValidateAsync(request);
+            if (!validationResult.IsValid)
+                throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
+            var user = await _userManager.FindByEmailAsync(request.Email.Trim());
+            if (user is null || !user.IsActive)
             {
-                storedToken.RevokedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync();
+                _logger.LogInformation("Password reset requested for an unknown or inactive account.");
+                return;
             }
+
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var encodedToken = EncodeToken(token);
+
+            await _publisher.PublishAsync(EmailQueue, new SendEmailMessage
+            {
+                ToEmail = user.Email!,
+                ToName = $"{user.FirstName} {user.LastName}".Trim(),
+                Subject = "Progressio password reset",
+                Body = $"Use the following token to reset your password. The token expires in 30 minutes:\n\n{encodedToken}"
+            });
+
+            _logger.LogInformation("Password reset token generated for User {UserId}.", user.Id);
+        }
+
+        public async Task ResetPasswordAsync(ResetPasswordRequest request)
+        {
+            var validationResult = await _resetPasswordValidator.ValidateAsync(request);
+            if (!validationResult.IsValid)
+                throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
+            var user = await _userManager.FindByEmailAsync(request.Email.Trim())
+                ?? throw new BusinessException("Password reset token is invalid or expired.");
+
+            string token;
+            try
+            {
+                token = DecodeToken(request.Token.Trim());
+            }
+            catch (FormatException)
+            {
+                throw new BusinessException("Password reset token is invalid or expired.");
+            }
+
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+
+            var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
+            if (!result.Succeeded)
+                throw new BusinessException("Password reset token is invalid or expired.");
+
+            var activeTokens = await _db.RefreshTokens
+                .Where(rt => rt.UserId == user.Id && rt.RevokedAt == null)
+                .ToListAsync();
+
+            foreach (var activeToken in activeTokens)
+                activeToken.RevokedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation("Password reset completed for User {UserId}.", user.Id);
         }
 
         public async Task ChangePasswordAsync(int userId, ChangePasswordRequest request)
@@ -156,6 +286,8 @@ namespace Progressio.Services.Services
             var validationResult = await _changePasswordValidator.ValidateAsync(request);
             if (!validationResult.IsValid)
                 throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+
+            await using var transaction = await _db.Database.BeginTransactionAsync();
 
             var user = await _userManager.FindByIdAsync(userId.ToString());
             if (user is null)
@@ -169,10 +301,11 @@ namespace Progressio.Services.Services
                 .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
                 .ToListAsync();
 
-            foreach (var t in tokens)
-                t.RevokedAt = DateTime.UtcNow;
+            foreach (var token in tokens)
+                token.RevokedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
             _logger.LogInformation("Password changed for user Id={UserId}", userId);
         }
 
@@ -187,11 +320,12 @@ namespace Progressio.Services.Services
             if (!AllowedMimeTypes.Contains(file.ContentType.ToLowerInvariant()))
                 throw new BusinessException("Only JPG, PNG and WebP images are allowed.");
 
-            var header = new byte[4];
-            using (var stream = file.OpenReadStream())
-                await stream.ReadAsync(header, 0, 4);
+            var header = new byte[12];
+            int bytesRead;
+            await using (var stream = file.OpenReadStream())
+                bytesRead = await stream.ReadAsync(header.AsMemory(0, header.Length));
 
-            if (!IsAllowedImageMagicBytes(header))
+            if (!IsAllowedImageMagicBytes(header, bytesRead))
                 throw new BusinessException("File content does not match an allowed image format.");
 
             var user = await _userManager.FindByIdAsync(userId.ToString());
@@ -206,20 +340,42 @@ namespace Progressio.Services.Services
             };
             var fileName = $"profile_{userId}_{Guid.NewGuid():N}{ext}";
 
-            var uploadFolder = _configuration["UploadPath"]
-                ?? throw new InvalidOperationException("UploadPath is not configured.");
-
-            Directory.CreateDirectory(uploadFolder);
-            var filePath = Path.Combine(uploadFolder, fileName);
+            Directory.CreateDirectory(_profileUploadPath);
+            var filePath = Path.Combine(_profileUploadPath, fileName);
 
             using (var fs = new FileStream(filePath, FileMode.Create))
                 await file.CopyToAsync(fs);
 
+            var previousProfileImageUrl = user.ProfileImageUrl;
             var url = $"/uploads/profiles/{fileName}";
             user.ProfileImageUrl = url;
-            await _userManager.UpdateAsync(user);
+            var updateResult = await _userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+            {
+                File.Delete(filePath);
+                throw new BusinessException(string.Join("; ", updateResult.Errors.Select(e => e.Description)));
+            }
 
+            DeletePreviousProfileImage(previousProfileImageUrl, filePath);
+            _logger.LogInformation("User {UserId} updated profile image.", userId);
             return url;
+        }
+
+        private void DeletePreviousProfileImage(string? previousUrl, string newFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(previousUrl))
+                return;
+
+            var previousFileName = Path.GetFileName(previousUrl);
+            if (string.IsNullOrWhiteSpace(previousFileName))
+                return;
+
+            var previousFilePath = Path.Combine(_profileUploadPath, previousFileName);
+            if (!string.Equals(previousFilePath, newFilePath, StringComparison.OrdinalIgnoreCase) &&
+                File.Exists(previousFilePath))
+            {
+                File.Delete(previousFilePath);
+            }
         }
 
         public async Task<UserResponse> GetCurrentUserAsync(int userId)
@@ -234,6 +390,37 @@ namespace Progressio.Services.Services
             return MapToUserResponse(user);
         }
 
+        public async Task<UserResponse> UpdateProfileAsync(
+            int userId,
+            UpdateProfileRequest request)
+        {
+            var validationResult = await _updateProfileValidator.ValidateAsync(request);
+            if (!validationResult.IsValid)
+            {
+                throw new BusinessException(
+                    string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
+            }
+
+            var user = await _userManager.FindByIdAsync(userId.ToString())
+                ?? throw new NotFoundException("User", userId);
+
+            var normalizedEmail = request.Email.Trim();
+            var userWithSameEmail = await _userManager.FindByEmailAsync(normalizedEmail);
+            if (userWithSameEmail is not null && userWithSameEmail.Id != userId)
+                throw new ConflictException("E-mail address is already in use.");
+
+            user.FirstName = request.FirstName.Trim();
+            user.LastName = request.LastName.Trim();
+            user.Email = normalizedEmail;
+
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+                throw new BusinessException(string.Join("; ", result.Errors.Select(e => e.Description)));
+
+            _logger.LogInformation("User {UserId} updated profile details.", userId);
+            return await GetCurrentUserAsync(userId);
+        }
+
         public async Task UpdateProfilePublicAsync(int userId, bool isPublic)
         {
             var user = await _userManager.FindByIdAsync(userId.ToString());
@@ -241,13 +428,16 @@ namespace Progressio.Services.Services
                 throw new NotFoundException("User", userId);
 
             user.IsProfilePublic = isPublic;
-            await _userManager.UpdateAsync(user);
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+                throw new BusinessException(string.Join("; ", result.Errors.Select(e => e.Description)));
         }
 
         private async Task<LoginResponse> GenerateTokenResponseAsync(AppUser user)
         {
             var roles = await _userManager.GetRolesAsync(user);
-            var accessToken = GenerateJwtToken(user, roles);
+            var securityStamp = await _userManager.GetSecurityStampAsync(user);
+            var accessToken = GenerateJwtToken(user, roles, securityStamp);
             var rawRefreshToken = _crypto.GenerateSecureToken();
             var tokenHash = _crypto.HashToken(rawRefreshToken);
 
@@ -270,14 +460,14 @@ namespace Progressio.Services.Services
             {
                 AccessToken = accessToken,
                 RefreshToken = rawRefreshToken,
-                User = MapToUserResponse(fullUser)
+                User = MapToUserResponse(fullUser),
+                Roles = roles.ToArray()
             };
         }
 
-        private string GenerateJwtToken(AppUser user, IList<string> roles)
+        private string GenerateJwtToken(AppUser user, IList<string> roles, string securityStamp)
         {
-            var jwtSettings = _configuration.GetSection("Jwt");
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Key"]!));
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var claims = new List<Claim>
@@ -285,6 +475,7 @@ namespace Progressio.Services.Services
                 new(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new(ClaimTypes.Name, user.UserName!),
                 new(ClaimTypes.Email, user.Email!),
+                new(SecurityClaimNames.SecurityStamp, securityStamp),
                 new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
@@ -292,14 +483,30 @@ namespace Progressio.Services.Services
                 claims.Add(new Claim(ClaimTypes.Role, role));
 
             var token = new JwtSecurityToken(
-                issuer: jwtSettings["Issuer"],
-                audience: jwtSettings["Audience"],
+                issuer: _jwtIssuer,
+                audience: _jwtAudience,
                 claims: claims,
                 expires: DateTime.UtcNow.AddMinutes(60),
                 signingCredentials: creds
             );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+
+        private static string EncodeToken(string token)
+        {
+            return Convert.ToBase64String(Encoding.UTF8.GetBytes(token))
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
+        }
+
+        private static string DecodeToken(string encodedToken)
+        {
+            var value = encodedToken.Replace('-', '+').Replace('_', '/');
+            value = value.PadRight(value.Length + ((4 - value.Length % 4) % 4), '=');
+            return Encoding.UTF8.GetString(Convert.FromBase64String(value));
         }
 
         private static UserResponse MapToUserResponse(AppUser user)

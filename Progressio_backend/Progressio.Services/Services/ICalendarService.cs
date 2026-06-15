@@ -11,7 +11,7 @@ namespace Progressio.Services.Services
     public interface ICalendarService
     {
         Task<PagedResult<CalendarItemResponse>> GetUpcomingAsync(int userId, CalendarSearchObject search);
-        Task<List<CalendarItemResponse>> GetTodayAsync(int userId);
+        Task<PagedResult<CalendarItemResponse>> GetTodayAsync(int userId, BaseSearchObject search);
         Task<PagedResult<CalendarItemResponse>> GetMonthAsync(int userId, int year, int month, BaseSearchObject search);
     }
 }

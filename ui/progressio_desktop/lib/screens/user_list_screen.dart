@@ -57,15 +57,16 @@ class _UserListScreenState extends State<UserListScreen> {
           if (_filterIsPremium != null) 'isPremium': _filterIsPremium,
         },
       );
-      setState(() => _result = result);
+      if (mounted) setState(() => _result = result);
     } catch (e) {
       _showError(e.toString());
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _showError(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppColors.error),
     );
@@ -104,7 +105,6 @@ class _UserListScreenState extends State<UserListScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Divider(color: AppColors.divider),
-              _infoRow('ID', '#${user.id}'),
               _infoRow('Email', user.email),
               _infoRow('Member Since', formatDate(user.createdAt)),
               _infoRow('Status', user.isActive ? 'Active' : 'Inactive'),
@@ -128,8 +128,7 @@ class _UserListScreenState extends State<UserListScreen> {
     );
   }
 
-  int get _totalPages =>
-      ((_result?.totalCount ?? 0) / _pageSize).ceil();
+  int get _totalPages => ((_result?.totalCount ?? 0) / _pageSize).ceil();
 
   @override
   Widget build(BuildContext context) {
@@ -157,8 +156,7 @@ class _UserListScreenState extends State<UserListScreen> {
               style: const TextStyle(color: AppColors.textPrimary),
               decoration: const InputDecoration(
                 hintText: 'Search by name, username, email...',
-                prefixIcon:
-                    Icon(Icons.search, color: AppColors.textMuted),
+                prefixIcon: Icon(Icons.search, color: AppColors.textMuted),
               ),
               onSubmitted: (_) => _search(),
             ),
@@ -225,8 +223,7 @@ class _UserListScreenState extends State<UserListScreen> {
               .map((item) => DropdownMenuItem<T>(
                     value: item.value,
                     child: DefaultTextStyle(
-                      style: const TextStyle(
-                          color: AppColors.textSecondary),
+                      style: const TextStyle(color: AppColors.textSecondary),
                       child: item.child!,
                     ),
                   ))
@@ -295,8 +292,7 @@ class _UserListScreenState extends State<UserListScreen> {
   }
 
   Widget _buildAvatar(AppUser user, {double size = 36}) {
-    if (user.profileImageUrl != null &&
-        user.profileImageUrl!.isNotEmpty) {
+    if (user.profileImageUrl != null && user.profileImageUrl!.isNotEmpty) {
       return ClipOval(
         child: CachedNetworkImage(
           imageUrl: user.profileImageUrl!,
@@ -321,9 +317,7 @@ class _UserListScreenState extends State<UserListScreen> {
       ),
       child: Center(
         child: Text(
-          user.firstName.isNotEmpty
-              ? user.firstName[0].toUpperCase()
-              : '?',
+          user.firstName.isNotEmpty ? user.firstName[0].toUpperCase() : '?',
           style: TextStyle(
             color: AppColors.primary,
             fontSize: size * 0.4,
@@ -406,18 +400,15 @@ class _UserListScreenState extends State<UserListScreen> {
               IconButton(
                 icon: const Icon(Icons.chevron_left,
                     color: AppColors.textSecondary),
-                onPressed:
-                    _page > 1 ? () => _search(page: _page - 1) : null,
+                onPressed: _page > 1 ? () => _search(page: _page - 1) : null,
               ),
               Text('Page $_page of $_totalPages',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary)),
+                  style: const TextStyle(color: AppColors.textSecondary)),
               IconButton(
                 icon: const Icon(Icons.chevron_right,
                     color: AppColors.textSecondary),
-                onPressed: _page < _totalPages
-                    ? () => _search(page: _page + 1)
-                    : null,
+                onPressed:
+                    _page < _totalPages ? () => _search(page: _page + 1) : null,
               ),
             ],
           ),

@@ -10,6 +10,7 @@ import 'package:progressio_desktop/providers/content_provider.dart';
 import 'package:progressio_desktop/providers/season_provider.dart';
 import 'package:progressio_desktop/screens/episode_list_screen.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
+import 'package:progressio_desktop/widgets/app_ui.dart';
 
 class SeasonListScreen extends StatefulWidget {
   const SeasonListScreen({super.key});
@@ -45,11 +46,8 @@ class _SeasonListScreenState extends State<SeasonListScreen> {
 
   Future<void> _loadContents() async {
     try {
-      // Load only Series and Anime content types
-      final result = await _contentProvider.get(
-        filter: {'pageSize': 200},
-      );
-      setState(() => _contents = result.items ?? []);
+      final items = await _contentProvider.getAll();
+      if (mounted) setState(() => _contents = items);
     } catch (e) {
       _showError(e.toString());
     }
@@ -181,6 +179,7 @@ class _SeasonListScreenState extends State<SeasonListScreen> {
   }
 
   Future<void> _deleteSeason(Season season) async {
+    if (!await showDeleteConfirmation(context, itemName: 'Season ${season.seasonNumber}')) return;
     try {
       await _seasonProvider.delete(season.id);
       ScaffoldMessenger.of(context).showSnackBar(

@@ -87,9 +87,9 @@ namespace Progressio.Worker.Consumers
 
                 try
                 {
-                    var message = JsonSerializer.Deserialize<UserFollowedMessage>(json);
-                    if (message is not null)
-                        await ProcessAsync(message, stoppingToken);
+                    var message = JsonSerializer.Deserialize<UserFollowedMessage>(json)
+                        ?? throw new InvalidOperationException("Invalid user-followed message payload.");
+                    await ProcessAsync(message, stoppingToken);
 
                     await _channel!.BasicAckAsync(ea.DeliveryTag, false, stoppingToken);
                 }
