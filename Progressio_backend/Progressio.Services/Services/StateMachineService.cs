@@ -17,7 +17,7 @@ namespace Progressio.Services.Services
             [ProgressStatus.Pending] = [ProgressStatus.InProgress, ProgressStatus.Cancelled],
             [ProgressStatus.InProgress] = [ProgressStatus.Completed, ProgressStatus.Cancelled, ProgressStatus.OnHold],
             [ProgressStatus.OnHold] = [ProgressStatus.InProgress, ProgressStatus.Cancelled],
-            [ProgressStatus.Completed] = [],
+            [ProgressStatus.Completed] = [ProgressStatus.InProgress],
             [ProgressStatus.Cancelled] = []
         };
 
@@ -38,7 +38,7 @@ namespace Progressio.Services.Services
 
             var now = DateTime.UtcNow;
 
-            
+
             if (newStatus == ProgressStatus.InProgress && progress.StartedAt is null)
                 progress.StartedAt = now;
 

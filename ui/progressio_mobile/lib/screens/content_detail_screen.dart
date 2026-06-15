@@ -60,6 +60,10 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
   final Set<int> _watchedEpisodeIds = {};
   final Set<int> _readChapterIds = {};
 
+  // sprječava duplo slanje zahtjeva (npr. double-tap)
+  final Set<int> _pendingEpisodeMarks = {};
+  final Set<int> _pendingChapterMarks = {};
+
   bool get _isSeriesType {
     final t = _content?.contentTypeName?.toLowerCase() ?? '';
     return t.contains('anime') || t.contains('series') || t.contains('tv');
@@ -1024,6 +1028,8 @@ Future<void> _loadChapterProgress() async {
           progressStatus: _progress?.status,
           watchedEpisodeIds: _watchedEpisodeIds,
           onMarkEpisode: (episodeId) async {
+  if (_pendingEpisodeMarks.contains(episodeId)) return;
+  _pendingEpisodeMarks.add(episodeId);
   try {
     var progress = _progress;
 
@@ -1037,38 +1043,28 @@ Future<void> _loadChapterProgress() async {
       }
     }
 
-    if (progress.status != 'InProgress') {
-      progress = await context.read<ProgressProvider>().changeStatus(
-            progress.id,
-            'InProgress',
-          );
-
-      if (mounted) {
-        setState(() => _progress = progress);
-      }
-    }
-
-    if (_watchedEpisodeIds.contains(episodeId)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Episode already marked as watched.'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
-      return;
-    }
+    final wasWatched = _watchedEpisodeIds.contains(episodeId);
+    final newValue = !wasWatched;
 
     await context.read<ProgressProvider>().markEpisode(
           progress.id,
           episodeId,
-          true,
+          newValue,
         );
-              if (mounted) setState(() => _watchedEpisodeIds.add(episodeId));
+              if (mounted) {
+                setState(() {
+                  if (newValue) {
+                    _watchedEpisodeIds.add(episodeId);
+                  } else {
+                    _watchedEpisodeIds.remove(episodeId);
+                  }
+                });
+              }
               final updated = await context
                   .read<ProgressProvider>()
                   .getForContent(widget.contentId);
               if (mounted) setState(() => _progress = updated);
-              if (mounted && _characters.isNotEmpty) {
+              if (mounted && newValue && _characters.isNotEmpty) {
                 await showVoteDialog(
                   context,
                   characters: _characters,
@@ -1082,7 +1078,15 @@ Future<void> _loadChapterProgress() async {
               if (msg.toLowerCase().contains('already') ||
                   msg.contains('409') ||
                   msg.toLowerCase().contains('conflict')) {
-                if (mounted) setState(() => _watchedEpisodeIds.add(episodeId));
+                if (mounted) {
+                  setState(() {
+                    if (_watchedEpisodeIds.contains(episodeId)) {
+                      _watchedEpisodeIds.remove(episodeId);
+                    } else {
+                      _watchedEpisodeIds.add(episodeId);
+                    }
+                  });
+                }
               } else {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1093,6 +1097,8 @@ Future<void> _loadChapterProgress() async {
                   );
                 }
               }
+            } finally {
+              _pendingEpisodeMarks.remove(episodeId);
             }
           },
           onOpenComments: (episode) {
@@ -1207,6 +1213,8 @@ Future<void> _loadChapterProgress() async {
                 size: 20,
               ),
               onPressed: () async {
+                if (_pendingChapterMarks.contains(ch.id)) return;
+                _pendingChapterMarks.add(ch.id);
                 try {
                   var progress = _progress;
 
@@ -1218,19 +1226,22 @@ Future<void> _loadChapterProgress() async {
                     if (mounted) setState(() => _progress = progress);
                   }
 
-                  if (progress.status != 'InProgress') {
-                    progress = await context
-                        .read<ProgressProvider>()
-                        .changeStatus(progress.id, 'InProgress');
-
-                    if (mounted) setState(() => _progress = progress);
-                  }
+                  final wasRead = _readChapterIds.contains(ch.id);
+                  final newValue = !wasRead;
 
                   await context
                       .read<ProgressProvider>()
-                      .markChapter(progress.id, ch.id, true);
+                      .markChapter(progress.id, ch.id, newValue);
 
-                  if (mounted) setState(() => _readChapterIds.add(ch.id));
+                  if (mounted) {
+                    setState(() {
+                      if (newValue) {
+                        _readChapterIds.add(ch.id);
+                      } else {
+                        _readChapterIds.remove(ch.id);
+                      }
+                    });
+                  }
 
                   final updated = await context
                       .read<ProgressProvider>()
@@ -1239,7 +1250,7 @@ Future<void> _loadChapterProgress() async {
                   if (mounted && updated != null) {
                     setState(() => _progress = updated);
                   }
-                  if (mounted && _characters.isNotEmpty) {
+                  if (mounted && newValue && _characters.isNotEmpty) {
   await showVoteDialog(
     context,
     characters: _characters,
@@ -1249,6 +1260,8 @@ Future<void> _loadChapterProgress() async {
 }
                 } catch (e) {
                   if (mounted) _showError(e.toString());
+                } finally {
+                  _pendingChapterMarks.remove(ch.id);
                 }
               },
             ),
@@ -1459,7 +1472,7 @@ class _SeasonTile extends StatelessWidget {
                   children: episodes
                       .map((e) => _EpisodeTile(
                             episode: e,
-                            canMark: progressId != null && progressStatus == 'InProgress',
+                            canMark: true,
                             isWatched: watchedEpisodeIds.contains(e.id),
                             onMark: () => onMarkEpisode(e.id),
                             onOpenComments: () => onOpenComments(e),
@@ -1543,7 +1556,7 @@ class _EpisodeTile extends StatelessWidget {
                   size: 18,
                 ),
                 onPressed: onMark,
-                tooltip: isWatched ? 'Already watched' : 'Mark as watched',
+                tooltip: isWatched ? 'Mark as unwatched' : 'Mark as watched',
               ),
           ],
         ),
