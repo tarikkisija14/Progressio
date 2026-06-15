@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:progressio_mobile/providers/auth_provider.dart';
 import 'package:progressio_mobile/providers/user_provider.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
@@ -35,10 +36,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
-      await context.read<UserProvider>().postRaw('auth/change-password', {
-        'currentPassword': _currentController.text,
-        'newPassword': _newController.text,
-      });
+      await context.read<UserProvider>().changePassword(
+            currentPassword: _currentController.text,
+            newPassword: _newController.text,
+          );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -93,8 +94,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   obscure: _obscureCurrent,
                   onToggle: () =>
                       setState(() => _obscureCurrent = !_obscureCurrent),
-                  validator: (v) =>
-                      (v == null || v.isEmpty) ? 'Required' : null,
+                  validator: (value) =>
+                      (value == null || value.isEmpty)
+                          ? 'Current password is required.'
+                          : null,
                 ),
                 const SizedBox(height: 16),
                 _buildField(
@@ -103,9 +106,19 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   obscure: _obscureNew,
                   onToggle: () =>
                       setState(() => _obscureNew = !_obscureNew),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Required';
-                    if (v.length < 6) return 'At least 6 characters';
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'New password is required.';
+                    }
+                    if (value.length < 8) {
+                      return 'New password must contain at least 8 characters.';
+                    }
+                    if (!RegExp(r'[0-9]').hasMatch(value)) {
+                      return 'New password must contain at least one digit.';
+                    }
+                    if (value == _currentController.text) {
+                      return 'New password must be different from the current password.';
+                    }
                     return null;
                   },
                 ),
@@ -116,10 +129,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   obscure: _obscureConfirm,
                   onToggle: () =>
                       setState(() => _obscureConfirm = !_obscureConfirm),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Required';
-                    if (v != _newController.text) {
-                      return 'Passwords do not match';
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Password confirmation is required.';
+                    }
+                    if (value != _newController.text) {
+                      return 'Password confirmation must match the new password.';
                     }
                     return null;
                   },

@@ -10,10 +10,9 @@ class UserListProvider extends BaseProvider<UserList> {
 
   /// GET /api/lists?page=1&pageSize=50
   Future<List<UserList>> getMyLists({String? search}) async {
-    final filter = <String, dynamic>{'page': 1, 'pageSize': 50};
+    final filter = <String, dynamic>{};
     if (search != null && search.isNotEmpty) filter['search'] = search;
-    final result = await get(filter: filter);
-    return result.items;
+    return getAll(filter: filter);
   }
 
   /// GET /api/lists/public?page=1&pageSize=20&search=
@@ -119,7 +118,10 @@ class UserListProvider extends BaseProvider<UserList> {
 
   /// GET /api/lists/{id}/members
   Future<List<UserListMember>> getMembers(int listId) async {
-    final data = await getRaw('lists/$listId/members');
+    final data = await getRaw(
+      'lists/$listId/members',
+      query: {'page': 1, 'pageSize': 100},
+    );
     final list = data is List ? data : (data['items'] ?? []);
     return (list as List).map((e) => UserListMember.fromJson(e)).toList();
   }

@@ -20,6 +20,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   bool _loading = true;
   bool _isPrivate = false;
   bool _followLoading = false;
+  bool _isFollowing = false;
 
   @override
   void initState() {
@@ -31,16 +32,24 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     setState(() => _loading = true);
     try {
       final user = await context.read<UserProvider>().getProfile(widget.userId);
-      if (mounted) setState(() {
-        _user = user;
-        _loading = false;
-        _isPrivate = false;
-      });
+      if (mounted) {
+        setState(() {
+          _user = user;
+          _loading = false;
+          _isPrivate = false;
+          // Ispravno inicijaliziramo follow stanje iz backend response-a
+          _isFollowing = user.isFollowedByCurrentUser;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() {
-        _loading = false;
-        _isPrivate = e.toString().contains('403') || e.toString().contains('Forbidden');
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _isPrivate = e.toString().contains('403') ||
+              e.toString().contains('Forbidden') ||
+              e.toString().contains('private');
+        });
+      }
     }
   }
 
@@ -48,24 +57,34 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     if (_user == null) return;
     setState(() => _followLoading = true);
     try {
-      // We use isProfilePublic as a proxy for "I follow them" — not ideal,
-      // but the backend UserProfileResponse doesn't include isFollowing.
-      // In a real scenario you'd have a separate isFollowing field.
-      await context.read<UserProvider>().follow(widget.userId);
-      await _load();
-    } catch (_) {
-      try {
+      if (_isFollowing) {
         await context.read<UserProvider>().unfollow(widget.userId);
-        await _load();
-      } catch (e) {
-        if (mounted) {
+        if (mounted) setState(() => _isFollowing = false);
+      } else {
+        await context.read<UserProvider>().follow(widget.userId);
+        if (mounted) setState(() => _isFollowing = true);
+      }
+    } catch (e) {
+      if (mounted) {
+        // Izvuci čitljivu poruku iz ApiException
+        final msg = e.toString().replaceFirst(RegExp(r'^ApiException:\s*'), '');
+        // Ako backend kaže "already following" — samo ažuriraj UI stanje
+        if (msg.toLowerCase().contains('already following')) {
+          setState(() => _isFollowing = true);
+        } else if (msg.toLowerCase().contains('not following')) {
+          setState(() => _isFollowing = false);
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+            SnackBar(
+              content: Text(msg),
+              backgroundColor: AppColors.error,
+            ),
           );
         }
       }
+    } finally {
+      if (mounted) setState(() => _followLoading = false);
     }
-    if (mounted) setState(() => _followLoading = false);
   }
 
   @override
@@ -153,7 +172,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   if (u.isPremium) ...[
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                             colors: [AppColors.premium, AppColors.primary]),
@@ -172,6 +192,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               Text('@${u.username}',
                   style: const TextStyle(
                       color: AppColors.textMuted, fontSize: 13)),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text('${u.followerCount} followers',
+                      style: const TextStyle(
+                          color: AppColors.textFaint, fontSize: 12)),
+                  const SizedBox(width: 10),
+                  Text('${u.followingCount} following',
+                      style: const TextStyle(
+                          color: AppColors.textFaint, fontSize: 12)),
+                ],
+              ),
             ],
           ),
         ),
@@ -182,11 +214,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Widget _buildStatsRow(AppUser u) {
     return Row(
       children: [
-        Expanded(child: _statBox('Completed', u.totalCompleted.toString(), AppColors.success)),
+        Expanded(
+            child: _statBox('Completed', u.totalCompleted.toString(),
+                AppColors.success)),
         const SizedBox(width: 10),
-        Expanded(child: _statBox('In Progress', u.totalInProgress.toString(), AppColors.primary)),
+        Expanded(
+            child: _statBox('In Progress', u.totalInProgress.toString(),
+                AppColors.primary)),
         const SizedBox(width: 10),
-        Expanded(child: _statBox('Member since', _formatYear(u.createdAt), AppColors.textMuted)),
+        Expanded(
+            child: _statBox(
+                'Member since', _formatYear(u.createdAt), AppColors.textMuted)),
       ],
     );
   }
@@ -206,7 +244,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   color: color, fontSize: 20, fontWeight: FontWeight.w800)),
           const SizedBox(height: 3),
           Text(label,
-              style: const TextStyle(color: AppColors.textFaint, fontSize: 11)),
+              style: const TextStyle(
+                  color: AppColors.textFaint, fontSize: 11)),
         ],
       ),
     );
@@ -218,15 +257,25 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       child: OutlinedButton.icon(
         onPressed: _followLoading ? null : _toggleFollow,
         icon: _followLoading
-            ? const SizedBox(width: 16, height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
-            : const Icon(Icons.person_add_rounded, size: 18),
-        label: const Text('Follow / Unfollow'),
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.primary))
+            : Icon(
+                _isFollowing
+                    ? Icons.person_remove_rounded
+                    : Icons.person_add_rounded,
+                size: 18),
+        label: Text(_isFollowing ? 'Unfollow' : 'Follow'),
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          side: const BorderSide(color: AppColors.primary),
+          foregroundColor:
+              _isFollowing ? AppColors.textMuted : AppColors.primary,
+          side: BorderSide(
+              color: _isFollowing ? AppColors.border : AppColors.primary),
           padding: const EdgeInsets.symmetric(vertical: 13),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );
@@ -258,7 +307,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  Widget _infoRow(IconData icon, String text, {Color color = AppColors.textMuted}) {
+  Widget _infoRow(IconData icon, String text,
+      {Color color = AppColors.textMuted}) {
     return Row(
       children: [
         Icon(icon, color: color, size: 18),
@@ -283,7 +333,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 shape: BoxShape.circle,
                 border: Border.all(color: AppColors.border),
               ),
-              child: const Icon(Icons.lock_rounded, color: AppColors.textMuted, size: 32),
+              child: const Icon(Icons.lock_rounded,
+                  color: AppColors.textMuted, size: 32),
             ),
             const SizedBox(height: 18),
             const Text('Private Profile',
@@ -295,17 +346,26 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             const Text(
               'This profile is private. Follow this user to see their activity.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textMuted, fontSize: 14, height: 1.5),
+              style: TextStyle(
+                  color: AppColors.textMuted, fontSize: 14, height: 1.5),
             ),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               onPressed: _followLoading ? null : _toggleFollow,
-              icon: const Icon(Icons.person_add_rounded, size: 18),
+              icon: _followLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.primary),
+                    )
+                  : const Icon(Icons.person_add_rounded, size: 18),
               label: const Text('Send Follow Request'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
                 side: const BorderSide(color: AppColors.primary),
-                padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 20),
+                padding: const EdgeInsets.symmetric(
+                    vertical: 13, horizontal: 20),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
@@ -320,10 +380,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.person_off_rounded, color: AppColors.textFaint, size: 52),
-          const SizedBox(height: 16),
-          const Text('User not found',
+        children: const [
+          Icon(Icons.person_off_rounded,
+              color: AppColors.textFaint, size: 52),
+          SizedBox(height: 16),
+          Text('User not found',
               style: TextStyle(color: AppColors.textMuted, fontSize: 16)),
         ],
       ),

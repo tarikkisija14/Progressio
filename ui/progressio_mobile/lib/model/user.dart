@@ -1,3 +1,5 @@
+import 'package:progressio_mobile/core/api_config.dart';
+
 class AppUser {
   final int id;
   final String firstName;
@@ -12,6 +14,9 @@ class AppUser {
   final DateTime createdAt;
   final int totalCompleted;
   final int totalInProgress;
+  final bool isFollowedByCurrentUser;  
+  final int followerCount;             
+  final int followingCount;            
 
   AppUser({
     this.id = 0,
@@ -27,6 +32,9 @@ class AppUser {
     DateTime? createdAt,
     this.totalCompleted = 0,
     this.totalInProgress = 0,
+    this.isFollowedByCurrentUser = false,  
+    this.followerCount = 0,                
+    this.followingCount = 0,               
   }) : createdAt = createdAt ?? DateTime.now();
 
   String get fullName => '$firstName $lastName'.trim();
@@ -38,7 +46,7 @@ class AppUser {
       lastName: json['lastName'] ?? '',
       username: json['username'] ?? '',
       email: json['email'] ?? '',
-      profileImageUrl: json['profileImageUrl'],
+      profileImageUrl: ApiConfig.resolveResource(json['profileImageUrl'] as String?),
       isProfilePublic: json['isProfilePublic'] ?? true,
       isActive: json['isActive'] ?? true,
       isPremium: json['isPremium'] ?? false,
@@ -48,6 +56,9 @@ class AppUser {
           : DateTime.now(),
       totalCompleted: json['totalCompleted'] ?? 0,
       totalInProgress: json['totalInProgress'] ?? 0,
+      isFollowedByCurrentUser: json['isFollowedByCurrentUser'] ?? false,  
+      followerCount: json['followerCount'] ?? 0,                          
+      followingCount: json['followingCount'] ?? 0,                        
     );
   }
 }

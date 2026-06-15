@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:provider/provider.dart';
 
+import 'package:progressio_mobile/core/api_config.dart';
+import 'package:progressio_mobile/core/api_exception.dart';
 import 'package:progressio_mobile/providers/auth_provider.dart';
 import 'package:progressio_mobile/providers/payment_provider.dart';
 import 'package:progressio_mobile/providers/subscription_provider.dart';
@@ -33,17 +35,29 @@ class _PremiumScreenState extends State<PremiumScreen> {
   bool _loading = false;
   String? _error;
   bool _success = false;
+  bool _refunding = false;
 
   Future<void> _subscribe() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
-  
-      final clientSecret = await context
+      if (ApiConfig.stripePublishableKey.isEmpty) {
+        throw const ApiException(
+          'Stripe publishable key is not configured for this build.',
+        );
+      }
+
+      final paymentIntent = await context
           .read<PaymentProvider>()
           .createPaymentIntent(_selectedPlan);
+      final clientSecret = paymentIntent['clientSecret'] as String?;
+      if (clientSecret == null || clientSecret.isEmpty) {
+        throw const ApiException('Backend did not return a valid payment secret.');
+      }
 
-      
       await Stripe.instance.initPaymentSheet(
         paymentSheetParameters: SetupPaymentSheetParameters(
           paymentIntentClientSecret: clientSecret,
@@ -52,26 +66,109 @@ class _PremiumScreenState extends State<PremiumScreen> {
         ),
       );
 
-     
       await Stripe.instance.presentPaymentSheet();
+      await _waitForServerConfirmation();
 
-      
       final subscription =
           await context.read<SubscriptionProvider>().getMine();
-      if (subscription != null) {
-        AuthProvider.isPremium = subscription.isPremium;
+      if (subscription == null || !subscription.isPremium) {
+        throw const ApiException(
+          'Payment is still being processed. Reopen this screen in a few seconds.',
+        );
       }
 
-      if (mounted) setState(() { _loading = false; _success = true; });
-
-    } on StripeException catch (e) {
-     
+      AuthProvider.isPremium = true;
       if (mounted) {
-        final msg = e.error.localizedMessage ?? e.error.message ?? 'Payment cancelled.';
-        setState(() { _loading = false; _error = msg; });
+        setState(() {
+          _loading = false;
+          _success = true;
+        });
+      }
+    } on StripeException catch (e) {
+      if (mounted) {
+        final message =
+            e.error.localizedMessage ?? e.error.message ?? 'Payment cancelled.';
+        setState(() {
+          _loading = false;
+          _error = message;
+        });
       }
     } catch (e) {
-      if (mounted) setState(() { _loading = false; _error = e.toString(); });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _waitForServerConfirmation() async {
+    final paymentProvider = context.read<PaymentProvider>();
+
+    for (var attempt = 0; attempt < 12; attempt++) {
+      final payment = await paymentProvider.getLatestPayment();
+      if (payment?['isPaid'] == true && payment?['status'] == 'Completed') {
+        return;
+      }
+
+      if (payment?['status'] == 'Failed' || payment?['status'] == 'Refunded') {
+        throw ApiException(
+          'Payment could not be completed. Current status: ${payment?['status']}.',
+        );
+      }
+
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+
+    throw const ApiException(
+      'Payment was submitted, but the server has not confirmed it yet. Try again shortly.',
+    );
+  }
+
+  Future<void> _requestRefund() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm refund'),
+        content: const Text(
+          'The latest completed payment will be refunded and the premium subscription will be cancelled.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Refund'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _refunding = true);
+    try {
+      final payment = await context.read<PaymentProvider>().getLatestPayment();
+      if (payment == null || payment['status'] != 'Completed') {
+        throw const ApiException('There is no completed payment available for refund.');
+      }
+
+      await context.read<PaymentProvider>().refund(payment['id'] as int);
+      AuthProvider.isPremium = false;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment was refunded successfully.')),
+        );
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _refunding = false);
     }
   }
 
@@ -96,7 +193,7 @@ class _PremiumScreenState extends State<PremiumScreen> {
           ),
         ),
       ),
-      body: _success ? _buildSuccess() : _buildContent(),
+      body: (_success || AuthProvider.isPremium) ? _buildSuccess() : _buildContent(),
     );
   }
 
@@ -142,10 +239,17 @@ class _PremiumScreenState extends State<PremiumScreen> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text('Get Started',
+                child: const Text('Continue',
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
               ),
             ),
+            if (AuthProvider.isPremium) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _refunding ? null : _requestRefund,
+                child: Text(_refunding ? 'Processing refund...' : 'Request refund'),
+              ),
+            ],
           ],
         ),
       ),

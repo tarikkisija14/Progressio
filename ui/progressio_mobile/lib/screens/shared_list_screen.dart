@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:progressio_mobile/model/user_list.dart';
+import 'package:progressio_mobile/model/user_search_item.dart';
 import 'package:progressio_mobile/providers/auth_provider.dart';
 import 'package:progressio_mobile/providers/user_list_provider.dart';
+import 'package:progressio_mobile/providers/user_provider.dart';
 import 'package:progressio_mobile/screens/content_detail_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
@@ -59,14 +61,62 @@ class _SharedListScreenState extends State<SharedListScreen> {
     }
   }
 
+  bool get _canEditList {
+    final currentUserId = AuthProvider.currentUserId;
+    if (_isOwner) return true;
+    if (currentUserId == null) return false;
+
+    return _members.any(
+      (member) => member.userId == currentUserId && member.canEdit,
+    );
+  }
+
   Future<void> _removeItem(UserListItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove item'),
+        content: Text(
+          'Remove "${item.contentTitle}" from this list? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text(
+              'Remove',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
     try {
-      await context.read<UserListProvider>().removeContent(widget.list.id, item.contentId);
-      setState(() => _items.removeWhere((e) => e.id == item.id));
-    } catch (e) {
+      await context
+          .read<UserListProvider>()
+          .removeContent(widget.list.id, item.contentId);
+      if (mounted) {
+        setState(() => _items.removeWhere((element) => element.id == item.id));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Item removed from the list.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text('Could not remove item: $error'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
     }
@@ -287,7 +337,7 @@ class _SharedListScreenState extends State<SharedListScreen> {
                   ],
                 ),
               ),
-              if (_isOwner || widget.list.isShared)
+              if (_canEditList)
                 IconButton(
                   icon: const Icon(Icons.remove_circle_outline_rounded,
                       color: AppColors.textFaint, size: 20),
@@ -318,6 +368,7 @@ class _SharedListScreenState extends State<SharedListScreen> {
 class _InviteSheet extends StatefulWidget {
   final int listId;
   final UserListProvider provider;
+
   const _InviteSheet({required this.listId, required this.provider});
 
   @override
@@ -325,37 +376,82 @@ class _InviteSheet extends StatefulWidget {
 }
 
 class _InviteSheetState extends State<_InviteSheet> {
-  final _ctrl = TextEditingController();
+  final _searchController = TextEditingController();
+  List<UserSearchItem> _results = [];
+  UserSearchItem? _selectedUser;
+  bool _searching = false;
   bool _sending = false;
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
+  Future<void> _search() async {
+    final query = _searchController.text.trim();
+    if (query.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter at least 2 characters of a name or username.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _searching = true;
+      _selectedUser = null;
+      _results = [];
+    });
+    try {
+      final result = await context.read<UserProvider>().searchUsers(
+            query,
+            pageSize: 10,
+          );
+      if (mounted) setState(() => _results = result.items);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('User search failed: $error'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
   Future<void> _invite() async {
-    final idStr = _ctrl.text.trim();
-    final userId = int.tryParse(idStr);
-    if (userId == null) return;
+    final selectedUser = _selectedUser;
+    if (selectedUser == null || _sending) return;
+
     setState(() => _sending = true);
     try {
-      await widget.provider.inviteUser(widget.listId, userId);
+      await widget.provider.inviteUser(widget.listId, selectedUser.id);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Invite sent'),
-              backgroundColor: AppColors.success),
+          SnackBar(
+            content: Text('Invite sent to @${selectedUser.username}.'),
+            backgroundColor: AppColors.success,
+          ),
         );
       }
-    } catch (e) {
+    } catch (error) {
       if (mounted) {
-        setState(() => _sending = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+          SnackBar(
+            content: Text('Invite failed: $error'),
+            backgroundColor: AppColors.error,
+          ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -363,7 +459,9 @@ class _InviteSheetState extends State<_InviteSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        left: 20, right: 20, top: 20,
+        left: 20,
+        right: 20,
+        top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       child: Column(
@@ -371,46 +469,156 @@ class _InviteSheetState extends State<_InviteSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
-            child: Container(width: 36, height: 4,
-                decoration: BoxDecoration(
-                    color: AppColors.border,
-                    borderRadius: BorderRadius.circular(2))),
-          ),
-          const SizedBox(height: 16),
-          const Text('Invite User',
-              style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700)),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _ctrl,
-            keyboardType: TextInputType.number,
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(
-              labelText: 'User ID',
-              hintText: 'Enter user ID to invite',
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
+          const SizedBox(height: 16),
+          const Text(
+            'Invite User',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Search by name or username, then select a user.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _searchController,
+            keyboardType: TextInputType.text,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => _search(),
+            onChanged: (value) {
+              if (value.trim().isEmpty && _results.isNotEmpty) {
+                setState(() {
+                  _results = [];
+                  _selectedUser = null;
+                });
+              }
+            },
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: InputDecoration(
+              labelText: 'Name or username',
+              hintText: 'For example: amar or Amar Hodžić',
+              prefixIcon: const Icon(Icons.person_search_outlined),
+              suffixIcon: IconButton(
+                onPressed: _searching ? null : _search,
+                icon: _searching
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.search),
+              ),
+            ),
+          ),
+          if (_results.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 220,
+              child: ListView.separated(
+                itemCount: _results.length,
+                separatorBuilder: (_, __) =>
+                    const Divider(height: 1, color: AppColors.divider),
+                itemBuilder: (_, index) {
+                  final user = _results[index];
+                  final selected = _selectedUser?.id == user.id;
+                  return ListTile(
+                    selected: selected,
+                    selectedTileColor:
+                        AppColors.primary.withValues(alpha: 0.1),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    leading: _buildAvatar(user),
+                    title: Text(
+                      user.fullName,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                    ),
+                    subtitle: Text(
+                      '@${user.username}',
+                      style: const TextStyle(color: AppColors.textMuted),
+                    ),
+                    trailing: Icon(
+                      selected
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.textFaint,
+                    ),
+                    onTap: _sending
+                        ? null
+                        : () => setState(() => _selectedUser = user),
+                  );
+                },
+              ),
+            ),
+          ] else if (!_searching && _searchController.text.trim().length >= 2) ...[
+            const SizedBox(height: 14),
+            const Text(
+              'No matching users found.',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ],
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _sending ? null : _invite,
+              onPressed:
+                  _sending || _selectedUser == null ? null : _invite,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: _sending
-                  ? const SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                  : const Text('Send Invite',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.black,
+                      ),
+                    )
+                  : const Text(
+                      'Send Invite',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAvatar(UserSearchItem user) {
+    return CircleAvatar(
+      backgroundColor: AppColors.surfaceElevated,
+      backgroundImage: user.profileImageUrl?.isNotEmpty == true
+          ? CachedNetworkImageProvider(user.profileImageUrl!)
+          : null,
+      child: user.profileImageUrl?.isNotEmpty == true
+          ? null
+          : Text(
+              user.firstName.isNotEmpty
+                  ? user.firstName[0].toUpperCase()
+                  : '?',
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
     );
   }
 }

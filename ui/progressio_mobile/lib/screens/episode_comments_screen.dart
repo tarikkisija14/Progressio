@@ -9,11 +9,15 @@ import 'package:progressio_mobile/widgets/skeleton_loader.dart';
 class EpisodeCommentsScreen extends StatefulWidget {
   final int episodeId;
   final String episodeTitle;
+  final int contentId;    
+  final bool isChapter;
 
   const EpisodeCommentsScreen({
     super.key,
     required this.episodeId,
     required this.episodeTitle,
+    required this.contentId,
+    this.isChapter = false, 
   });
 
   @override
@@ -32,24 +36,30 @@ class _EpisodeCommentsScreenState extends State<EpisodeCommentsScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final items = await context
-          .read<CommentProvider>()
-          .getEpisodeComments(widget.episodeId, hideSpoilers: false);
+      final provider = context.read<CommentProvider>();
+      final items = widget.isChapter
+          ? await provider.getChapterComments(widget.episodeId,
+              hideSpoilers: false)
+          : await provider.getEpisodeComments(widget.episodeId,
+              hideSpoilers: false);
       if (mounted) {
         setState(() {
           _comments = items;
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _loading = false);
+        _showError('Could not load comments: $error');
+      }
     }
   }
 
-  void _showAddComment() {
+ void _showAddComment() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -58,8 +68,10 @@ class _EpisodeCommentsScreenState extends State<EpisodeCommentsScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => _AddCommentSheet(
         episodeId: widget.episodeId,
+        contentId: widget.contentId,
         provider: context.read<CommentProvider>(),
         onPosted: _load,
+        isChapter: widget.isChapter,  // NOVO
       ),
     );
   }
@@ -141,7 +153,19 @@ class _EpisodeCommentsScreenState extends State<EpisodeCommentsScreen> {
     try {
       await context.read<CommentProvider>().toggleLike(comment.id);
       _load();
-    } catch (_) {}
+    } catch (error) {
+      if (mounted) _showError('Could not update like: $error');
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.error,
+      ),
+    );
   }
 
   Widget _buildEmpty() {
@@ -358,11 +382,16 @@ class _AddCommentSheet extends StatefulWidget {
   final int episodeId;
   final CommentProvider provider;
   final VoidCallback onPosted;
+  final int contentId;
+  final bool isChapter;   
 
   const _AddCommentSheet({
     required this.episodeId,
     required this.provider,
     required this.onPosted,
+    required this.contentId,
+    this.isChapter = false,
+
   });
 
   @override
@@ -380,16 +409,26 @@ class _AddCommentSheetState extends State<_AddCommentSheet> {
     super.dispose();
   }
 
-  Future<void> _post() async {
+    Future<void> _post() async {
     final text = _ctrl.text.trim();
     if (text.isEmpty || text.length > 500) return;
     setState(() => _posting = true);
     try {
-      await widget.provider.addEpisodeComment(
-        widget.episodeId,
-        text: text,
-        hasSpoiler: _hasSpoiler,
-      );
+      if (widget.isChapter) {
+        await widget.provider.addChapterComment(
+          widget.episodeId,
+          contentId: widget.contentId,
+          text: text,
+          hasSpoiler: _hasSpoiler,
+        );
+      } else {
+        await widget.provider.addEpisodeComment(
+          widget.episodeId,
+          contentId: widget.contentId,
+          text: text,
+          hasSpoiler: _hasSpoiler,
+        );
+      }
       widget.onPosted();
       if (mounted) Navigator.pop(context);
     } catch (e) {

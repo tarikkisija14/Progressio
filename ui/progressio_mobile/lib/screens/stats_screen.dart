@@ -33,6 +33,7 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Future<void> _load() async {
+    setState(() => _loadingBasic = true);
     try {
       final basic = await context.read<StatsProvider>().getBasicStats();
       if (mounted) setState(() {
@@ -66,66 +67,66 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: AppShellBackground(
-        child: SafeArea(
-          child: _loadingBasic
-              ? _buildSkeleton()
-              : RefreshIndicator(
-                  color: AppColors.primary,
-                  backgroundColor: AppColors.card,
-                  onRefresh: _load,
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(child: _buildHeader()),
-                      SliverToBoxAdapter(child: _buildBasicKpis()),
-                      SliverToBoxAdapter(child: _buildStreakRow()),
-                      if (_isPremium) ...[
-                        if (_loadingPremium)
-                          const SliverToBoxAdapter(child: _PremiumSkeleton())
-                        else if (_premium != null) ...[
-                          SliverToBoxAdapter(child: _buildHoursRow()),
-                          SliverToBoxAdapter(child: _buildGenreChart()),
-                          SliverToBoxAdapter(child: _buildHeatmap()),
-                          SliverToBoxAdapter(child: _buildWrappedBanner()),
-                        ],
-                      ] else
-                        SliverToBoxAdapter(child: _buildPremiumLock()),
-                      const SliverToBoxAdapter(child: SizedBox(height: 32)),
-                    ],
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 4),
-      child: Row(
-        children: [
-          const Text(
-            'My Stats',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-            ),
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        title: const Text(
+          'My Stats',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
-          const Spacer(),
+        ),
+        actions: [
           if (_isPremium)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [AppColors.premium, AppColors.primary]),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'PREMIUM',
-                style: TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.w800),
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                      colors: [AppColors.premium, AppColors.primary]),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'PREMIUM',
+                  style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800),
+                ),
               ),
             ),
         ],
+      ),
+      body: AppShellBackground(
+        child: _loadingBasic
+            ? _buildSkeleton()
+            : RefreshIndicator(
+                color: AppColors.primary,
+                backgroundColor: AppColors.card,
+                onRefresh: _load,
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildBasicKpis()),
+                    SliverToBoxAdapter(child: _buildStreakRow()),
+                    if (_isPremium) ...[
+                      if (_loadingPremium)
+                        const SliverToBoxAdapter(child: _PremiumSkeleton())
+                      else if (_premium != null) ...[
+                        SliverToBoxAdapter(child: _buildHoursRow()),
+                        SliverToBoxAdapter(child: _buildGenreChart()),
+                        SliverToBoxAdapter(child: _buildHeatmap()),
+                        SliverToBoxAdapter(child: _buildWrappedBanner()),
+                      ],
+                    ] else
+                      SliverToBoxAdapter(child: _buildPremiumLock()),
+                    const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                  ],
+                ),
+              ),
       ),
     );
   }
@@ -429,7 +430,7 @@ class _StatsScreenState extends State<StatsScreen> {
             Container(
               width: 60,
               height: 60,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: AppColors.primarySoft,
                 shape: BoxShape.circle,
               ),
@@ -537,8 +538,7 @@ class _StatsScreenState extends State<StatsScreen> {
       padding: EdgeInsets.all(18),
       child: Column(
         children: [
-          SkeletonBox(width: 160, height: 28, radius: 8),
-          SizedBox(height: 20),
+          SizedBox(height: 8),
           Row(children: [
             Expanded(child: SkeletonBox(width: double.infinity, height: 80)),
             SizedBox(width: 10),

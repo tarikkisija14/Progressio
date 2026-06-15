@@ -1,12 +1,11 @@
-// lib/model/user_list.dart
-// Usklađeno s UserListResponse iz backenda:
-//   Id, UserId, OwnerUsername, Name, Description,
-//   IsPublic, IsShared, ItemCount, MemberCount, CreatedAt
+import 'package:progressio_mobile/core/api_config.dart';
+
+
 
 class UserList {
   final int id;
   final int userId;
-  final String ownerUsername;   // OwnerUsername na backendu
+  final String ownerUsername;  
   final String name;
   final String? description;
   final bool isPublic;
@@ -46,7 +45,6 @@ class UserList {
   }
 }
 
-// ── UserListItemResponse ─────────────────────────────────────────────────────
 
 class UserListItem {
   final int id;
@@ -85,7 +83,7 @@ class UserListItem {
   }
 }
 
-// ── UserListMemberResponse ───────────────────────────────────────────────────
+
 
 class UserListMember {
   final int userId;
@@ -106,7 +104,7 @@ class UserListMember {
     return UserListMember(
       userId: json['userId'] ?? 0,
       username: json['username'] ?? '',
-      profileImageUrl: json['profileImageUrl'],
+      profileImageUrl: ApiConfig.resolveResource(json['profileImageUrl'] as String?),
       canEdit: json['canEdit'] ?? false,
       joinedAt: json['joinedAt'] != null
           ? DateTime.parse(json['joinedAt'])

@@ -109,12 +109,12 @@ Future<void> showVoteDialog(
         backgroundColor: AppColors.success,
       ),
     );
-  } catch (_) {
+  } catch (e) {
     if (!context.mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Could not save vote.'),
+      SnackBar(
+        content: Text(e.toString()),
         backgroundColor: AppColors.error,
       ),
     );

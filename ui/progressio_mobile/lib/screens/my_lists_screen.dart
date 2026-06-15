@@ -52,9 +52,14 @@ class _MyListsScreenState extends State<MyListsScreen>
         _myLists = lists;
         _loadingMine = false;
       });
-    } catch (_) {
-      if (mounted) setState(() => _loadingMine = false);
-    }
+    } catch (e) {
+  if (mounted) {
+    setState(() => _loadingMine = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+    );
+  }
+}
   }
 
   Future<void> _loadPublic({String? search}) async {
@@ -65,8 +70,13 @@ class _MyListsScreenState extends State<MyListsScreen>
         _publicLists = lists;
         _loadingPublic = false;
       });
-    } catch (_) {
-      if (mounted) setState(() => _loadingPublic = false);
+    } catch (e) {
+      if (mounted) {
+         setState(() => _loadingPublic = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+    );
+      };
     }
   }
 

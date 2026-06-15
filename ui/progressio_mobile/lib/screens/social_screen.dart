@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:progressio_mobile/model/feed_item.dart';
+import 'package:progressio_mobile/model/user_search_item.dart';
 import 'package:progressio_mobile/providers/feed_provider.dart';
 import 'package:progressio_mobile/providers/user_provider.dart';
 import 'package:progressio_mobile/screens/user_profile_screen.dart';
@@ -27,12 +28,10 @@ class _SocialScreenState extends State<SocialScreen> {
   int _page = 1;
   bool _hasMore = true;
 
-  // User search by userId (direct lookup — no username search endpoint exists)
-  int? _searchUserId;
   String _searchInput = '';
   bool _searchingUser = false;
-  Map<String, dynamic>? _foundUser;
-  bool _followingInProgress = false;
+  List<UserSearchItem> _searchResults = [];
+  int? _followActionUserId;
 
   @override
   void initState() {
@@ -104,40 +103,31 @@ class _SocialScreenState extends State<SocialScreen> {
 
   Future<void> _searchUser() async {
     final input = _searchInput.trim();
-    if (input.isEmpty) return;
-    final id = int.tryParse(input);
-    if (id == null) {
+    if (input.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Enter a valid user ID to search.'),
+          content: Text('Enter at least 2 characters of a name or username.'),
           backgroundColor: AppColors.error,
         ),
       );
       return;
     }
+
     setState(() {
       _searchingUser = true;
-      _foundUser = null;
+      _searchResults = [];
     });
     try {
-      final profile = await context.read<UserProvider>().getProfile(id);
-      if (mounted) {
-        setState(() => _foundUser = {
-              'id': profile.id,
-              'fullName': profile.fullName,
-              'username': profile.username,
-              'profileImageUrl': profile.profileImageUrl,
-              'isProfilePublic': profile.isProfilePublic,
-              'followerCount': 0,
-              'followingCount': 0,
-              'isFollowing': false,
-            });
-      }
-    } catch (_) {
+      final result = await context.read<UserProvider>().searchUsers(
+            input,
+            pageSize: 10,
+          );
+      if (mounted) setState(() => _searchResults = result.items);
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('User not found.'),
+          SnackBar(
+            content: Text('User search failed: $error'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -147,33 +137,36 @@ class _SocialScreenState extends State<SocialScreen> {
     }
   }
 
-  Future<void> _toggleFollow(int userId, bool isCurrentlyFollowing) async {
-    setState(() => _followingInProgress = true);
+  Future<void> _toggleFollow(UserSearchItem user) async {
+    setState(() => _followActionUserId = user.id);
     try {
-      if (isCurrentlyFollowing) {
-        await context.read<UserProvider>().unfollow(userId);
+      if (user.isFollowedByCurrentUser) {
+        await context.read<UserProvider>().unfollow(user.id);
       } else {
-        await context.read<UserProvider>().follow(userId);
+        await context.read<UserProvider>().follow(user.id);
       }
-      if (mounted && _foundUser != null) {
-        setState(() {
-          _foundUser = {
-            ..._foundUser!,
-            'isFollowing': !isCurrentlyFollowing,
-          };
-        });
+
+      if (mounted) {
+        final index = _searchResults.indexWhere((item) => item.id == user.id);
+        if (index >= 0) {
+          setState(() {
+            _searchResults[index] = user.copyWith(
+              isFollowedByCurrentUser: !user.isFollowedByCurrentUser,
+            );
+          });
+        }
       }
-    } catch (e) {
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Follow action failed: $error'),
             backgroundColor: AppColors.error,
           ),
         );
       }
     } finally {
-      if (mounted) setState(() => _followingInProgress = false);
+      if (mounted) setState(() => _followActionUserId = null);
     }
   }
 
@@ -201,8 +194,22 @@ class _SocialScreenState extends State<SocialScreen> {
             controller: _scrollController,
             slivers: [
               SliverToBoxAdapter(child: _buildSearchBar()),
-              if (_foundUser != null)
-                SliverToBoxAdapter(child: _buildFoundUser()),
+              if (_searchResults.isNotEmpty)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    0,
+                  ),
+                  sliver: SliverList.separated(
+                    itemCount: _searchResults.length,
+                    itemBuilder: (_, index) =>
+                        _buildFoundUser(_searchResults[index]),
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.sm),
+                  ),
+                ),
               if (_loading)
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
@@ -256,11 +263,11 @@ class _SocialScreenState extends State<SocialScreen> {
           Expanded(
             child: TextField(
               controller: _searchController,
-              keyboardType: TextInputType.number,
+              keyboardType: TextInputType.text,
               style: const TextStyle(
                   color: AppColors.textPrimary, fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Search user by ID…',
+                hintText: 'Search by name or username…',
                 hintStyle: const TextStyle(color: AppColors.textFaint),
                 prefixIcon: const Icon(Icons.person_search_outlined,
                     color: AppColors.textMuted),
@@ -281,7 +288,12 @@ class _SocialScreenState extends State<SocialScreen> {
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14, vertical: 11),
               ),
-              onChanged: (v) => _searchInput = v,
+              onChanged: (value) {
+                _searchInput = value;
+                if (value.trim().isEmpty && _searchResults.isNotEmpty) {
+                  setState(() => _searchResults = []);
+                }
+              },
               onSubmitted: (_) => _searchUser(),
             ),
           ),
@@ -309,85 +321,100 @@ class _SocialScreenState extends State<SocialScreen> {
     );
   }
 
-  Widget _buildFoundUser() {
-    final user = _foundUser!;
-    final isFollowing = user['isFollowing'] as bool;
+  Widget _buildFoundUser(UserSearchItem user) {
+    final actionInProgress = _followActionUserId == user.id;
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              UserProfileScreen(userId: user['id'] as int),
+          builder: (_) => UserProfileScreen(userId: user.id),
         ),
       ),
       child: Container(
-      margin: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
-      padding: const EdgeInsets.all(14),
-      decoration: AppDecorations.panel(borderColor: AppColors.primary),
-      child: Row(
-        children: [
-          _buildAvatar(user['profileImageUrl'] as String?, size: 44),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user['fullName'] as String? ?? '',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+        padding: const EdgeInsets.all(14),
+        decoration: AppDecorations.panel(borderColor: AppColors.primary),
+        child: Row(
+          children: [
+            _buildAvatar(user.profileImageUrl, size: 44),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.fullName,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                Text(
-                  '@${user['username']}',
-                  style: const TextStyle(
-                      color: AppColors.textMuted, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          if (!(user['isProfilePublic'] as bool))
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '@${user.username}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      if (!user.isProfilePublic) ...[
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.lock_outline,
+                          color: AppColors.textFaint,
+                          size: 13,
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
-              child: const Text('Private',
-                  style: TextStyle(
-                      color: AppColors.textMuted, fontSize: 11)),
-            )
-          else
+            ),
+            const SizedBox(width: 8),
             ElevatedButton(
-              onPressed: _followingInProgress
-                  ? null
-                  : () => _toggleFollow(
-                      user['id'] as int, isFollowing),
+              onPressed: actionInProgress ? null : () => _toggleFollow(user),
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    isFollowing ? AppColors.surfaceElevated : AppColors.primary,
-                foregroundColor:
-                    isFollowing ? AppColors.textPrimary : Colors.black,
+                backgroundColor: user.isFollowedByCurrentUser
+                    ? AppColors.surfaceElevated
+                    : AppColors.primary,
+                foregroundColor: user.isFollowedByCurrentUser
+                    ? AppColors.textPrimary
+                    : Colors.black,
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 8),
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadii.sm)),
+                  borderRadius: BorderRadius.circular(AppRadii.sm),
+                ),
               ),
-              child: Text(
-                isFollowing ? 'Unfollow' : 'Follow',
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600),
-              ),
+              child: actionInProgress
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.textPrimary,
+                      ),
+                    )
+                  : Text(
+                      user.isFollowedByCurrentUser ? 'Unfollow' : 'Follow',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
             ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 

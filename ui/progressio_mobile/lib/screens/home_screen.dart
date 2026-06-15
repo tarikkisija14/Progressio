@@ -427,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SectionHeader(title: 'Recommended For You'),
           const SizedBox(height: 14),
           SizedBox(
-            height: 230,
+            height: 240,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _recommendations.length,

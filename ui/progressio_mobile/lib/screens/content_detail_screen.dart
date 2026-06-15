@@ -34,7 +34,7 @@ class ContentDetailScreen extends StatefulWidget {
 }
 
 class _ContentDetailScreenState extends State<ContentDetailScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   Content? _content;
   UserProgress? _progress;
   List<Season> _seasons = [];
@@ -56,6 +56,10 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
   final Map<int, List<Episode>> _episodeCache = {};
   final Map<int, bool> _seasonExpanded = {};
 
+  // tracking pogledanih/pročitanih
+  final Set<int> _watchedEpisodeIds = {};
+  final Set<int> _readChapterIds = {};
+
   bool get _isSeriesType {
     final t = _content?.contentTypeName?.toLowerCase() ?? '';
     return t.contains('anime') || t.contains('series') || t.contains('tv');
@@ -72,9 +76,10 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
     return ['Info', 'Characters', 'Reviews'];
   }
 
-  @override
+    @override
   void initState() {
     super.initState();
+   
     _tabController = TabController(length: 3, vsync: this);
     _loadContent();
   }
@@ -85,13 +90,24 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
     super.dispose();
   }
 
-  void _reinitTabController() {
-    final newLength = _tabs.length;
-    if (_tabController.length != newLength) {
-      _tabController.dispose();
-      _tabController = TabController(length: newLength, vsync: this);
-    }
-  }
+    void _reinitTabController() {
+  final newLength = _tabs.length;
+
+  if (_tabController.length == newLength) return;
+
+  final oldIndex = _tabController.index;
+  final newIndex = oldIndex < newLength ? oldIndex : 0;
+
+  final oldController = _tabController;
+
+  _tabController = TabController(
+    length: newLength,
+    vsync: this,
+    initialIndex: newIndex,
+  );
+
+  oldController.dispose();
+}
 
   Future<void> _loadContent() async {
     try {
@@ -108,8 +124,21 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
         _progress = progress;
         _loadingContent = false;
       });
+  _reinitTabController();
 
-      _reinitTabController();
+  try {
+  await _loadEpisodeProgress();
+} catch (e) {
+  debugPrint('Could not load episode progress: $e');
+}
+
+try {
+  await _loadChapterProgress();
+} catch (e) {
+  debugPrint('Could not load chapter progress: $e');
+}
+
+    
 
       final t = content.contentTypeName?.toLowerCase() ?? '';
       final isSeries =
@@ -133,6 +162,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
         setState(() {
           _loadingContent = false;
         });
+        _showError('Could not load content: $e');
       }
     }
   }
@@ -140,49 +170,93 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
   Future<void> _loadSeasons() async {
     setState(() => _loadingSeasons = true);
     try {
-      final result = await context.read<SeasonProvider>().get(
-            filter: {'contentId': widget.contentId, 'page': 1, 'pageSize': 50},
+      final items = await context.read<SeasonProvider>().getAll(
+            filter: {'contentId': widget.contentId},
           );
       if (mounted) {
         setState(() {
-          _seasons = result.items;
+          _seasons = items;
           _loadingSeasons = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingSeasons = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _loadingSeasons = false);
+        _showError('Could not load seasons: $error');
+      }
     }
   }
 
   Future<void> _loadChapters() async {
     setState(() => _loadingChapters = true);
     try {
-      final result = await context.read<ChapterProvider>().get(
-            filter: {
-              'contentId': widget.contentId,
-              'page': 1,
-              'pageSize': 200
-            },
+      final items = await context.read<ChapterProvider>().getAll(
+            filter: {'contentId': widget.contentId},
           );
       if (mounted) {
         setState(() {
-          _chapters = result.items;
+          _chapters = items;
           _loadingChapters = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingChapters = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _loadingChapters = false);
+        _showError('Could not load chapters: $error');
+      }
     }
   }
+
+  Future<void> _loadEpisodeProgress() async {
+  final progress = _progress;
+  if (progress == null) return;
+
+  final items =
+      await context.read<ProgressProvider>().getEpisodeProgresses(progress.id);
+
+  if (!mounted) return;
+
+  setState(() {
+    _watchedEpisodeIds
+      ..clear()
+      ..addAll(
+        items
+            .where((x) => x['isWatched'] == true)
+            .map<int>((x) => x['episodeId'] as int),
+      );
+  });
+}
+
+Future<void> _loadChapterProgress() async {
+  final progress = _progress;
+  if (progress == null) return;
+
+  final items =
+      await context.read<ProgressProvider>().getChapterProgresses(progress.id);
+
+  if (!mounted) return;
+
+  setState(() {
+    _readChapterIds
+      ..clear()
+      ..addAll(
+        items
+            .where((x) => x['isRead'] == true)
+            .map<int>((x) => x['chapterId'] as int),
+      );
+  });
+}
 
   Future<void> _loadEpisodesForSeason(int seasonId) async {
     if (_episodeCache.containsKey(seasonId)) return;
     try {
-      final result = await context.read<EpisodeProvider>().get(
-            filter: {'seasonId': seasonId, 'page': 1, 'pageSize': 100},
+      final items = await context.read<EpisodeProvider>().getAll(
+            filter: {'seasonId': seasonId},
           );
-      if (mounted) setState(() => _episodeCache[seasonId] = result.items);
-    } catch (_) {}
+      if (mounted) setState(() => _episodeCache[seasonId] = items);
+    } catch (error) {
+      if (mounted) _showError('Could not load episodes: $error');
+    }
   }
 
   Future<void> _loadCharacters() async {
@@ -201,28 +275,46 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
           _loadingCharacters = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingCharacters = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _loadingCharacters = false);
+        _showError('Could not load characters: $error');
+      }
     }
   }
 
-  Future<void> _loadReviews() async {
-    setState(() => _loadingReviews = true);
+ Future<void> _loadReviews() async {
+  setState(() => _loadingReviews = true);
+
+  try {
+    final reviewProvider = context.read<ReviewProvider>();
+    final reviews = await reviewProvider.getForContent(widget.contentId);
+
+    Review? myReview;
     try {
-      final reviewProvider = context.read<ReviewProvider>();
-      final reviews = await reviewProvider.getForContent(widget.contentId);
-      final myReview = await reviewProvider.getMyReview(widget.contentId);
-      if (mounted) {
-        setState(() {
-          _reviews = reviews;
-          _myReview = myReview;
-          _loadingReviews = false;
-        });
+      myReview = await reviewProvider.getMyReview(widget.contentId);
+    } catch (e) {
+      if (!e.toString().contains('404') &&
+          !e.toString().toLowerCase().contains('not found')) {
+        rethrow;
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingReviews = false);
+      myReview = null;
     }
+
+    if (!mounted) return;
+
+    setState(() {
+      _reviews = reviews;
+      _myReview = myReview;
+      _loadingReviews = false;
+    });
+  } catch (error) {
+    if (!mounted) return;
+
+    setState(() => _loadingReviews = false);
+    _showError('Could not load reviews: $error');
   }
+}
 
   Future<void> _openReviewSheet() async {
     final saved = await showModalBottomSheet<bool>(
@@ -250,6 +342,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
           .startProgress(widget.contentId);
       if (mounted) setState(() {
         _progress = progress;
+        
         _updatingStatus = false;
       });
       if (mounted && !_isSeriesType && _characters.isNotEmpty) {
@@ -259,33 +352,144 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
           label: 'Pick your favourite character!',
         );
       }
-    } catch (_) {
-      if (mounted) setState(() => _updatingStatus = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _updatingStatus = false);
+        _showError('Could not start progress: $error');
+      }
     }
   }
 
-  Future<void> _changeStatus(String newStatus) async {
-    final p = _progress;
-    if (p == null) return;
+  Future<void> _requestStatusChange(String newStatus) async {
+    String? cancelledReason;
+
+    if (newStatus == 'Cancelled') {
+      cancelledReason = await _showCancellationDialog();
+      if (cancelledReason == null) return;
+    }
+
+    await _changeStatus(
+      newStatus,
+      cancelledReason: cancelledReason,
+    );
+  }
+
+  Future<String?> _showCancellationDialog() async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final reason = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Drop this content?'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your progress will be marked as cancelled. Enter a reason to continue.',
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 500,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Cancellation reason',
+                  hintText: 'For example: I am no longer interested',
+                ),
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  if (text.isEmpty) {
+                    return 'Enter a cancellation reason.';
+                  }
+                  if (text.length > 500) {
+                    return 'The reason cannot exceed 500 characters.';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Keep progress'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() != true) return;
+              Navigator.pop(dialogContext, controller.text.trim());
+            },
+            child: const Text(
+              'Drop',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    return reason;
+  }
+
+  Future<void> _changeStatus(
+    String newStatus, {
+    String? cancelledReason,
+  }) async {
+    final progress = _progress;
+    if (progress == null) return;
+
     setState(() => _updatingStatus = true);
     try {
-      final updated = await context
-          .read<ProgressProvider>()
-          .changeStatus(p.id, newStatus);
-      if (mounted) setState(() {
-        _progress = updated;
-        _updatingStatus = false;
-      });
-      if (mounted && newStatus == 'Completed' && !_isSeriesType && _characters.isNotEmpty) {
+      final updated = await context.read<ProgressProvider>().changeStatus(
+            progress.id,
+            newStatus,
+            cancelledReason: cancelledReason,
+          );
+      if (mounted) {
+        setState(() {
+          _progress = updated;
+          _updatingStatus = false;
+        });
+      }
+      if (mounted &&
+          newStatus == 'Completed' &&
+          !_isSeriesType &&
+          _characters.isNotEmpty) {
         await showVoteDialog(
           context,
           characters: _characters,
           label: 'Favourite character in this?',
         );
       }
-    } catch (_) {
-      if (mounted) setState(() => _updatingStatus = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _updatingStatus = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not update progress: $error'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.error,
+      ),
+    );
   }
 
   // ─── Build ──────────────────────────────────────────────────────────────────
@@ -532,11 +736,11 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
           spacing: 8,
           children: [
             _statusBtn('Complete', AppColors.success, Colors.white,
-                () => _changeStatus('Completed')),
+                () => _requestStatusChange('Completed')),
             _statusBtn('On Hold', AppColors.warning, Colors.black,
-                () => _changeStatus('OnHold')),
+                () => _requestStatusChange('OnHold')),
             _statusBtn('Drop', AppColors.error, Colors.white,
-                () => _changeStatus('Cancelled')),
+                () => _requestStatusChange('Cancelled')),
           ],
         );
       case 'OnHold':
@@ -544,14 +748,14 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
           spacing: 8,
           children: [
             _statusBtn('Resume', AppColors.primary, Colors.black,
-                () => _changeStatus('InProgress')),
+                () => _requestStatusChange('InProgress')),
             _statusBtn('Drop', AppColors.error, Colors.white,
-                () => _changeStatus('Cancelled')),
+                () => _requestStatusChange('Cancelled')),
           ],
         );
       case 'Completed':
         return _statusBtn('Re-watch', AppColors.secondary, Colors.black,
-            () => _changeStatus('InProgress'));
+            () => _requestStatusChange('InProgress'));
       default:
         return const SizedBox();
     }
@@ -817,11 +1021,49 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
             if (!isExpanded) _loadEpisodesForSeason(season.id);
           },
           progressId: _progress?.id,
+          progressStatus: _progress?.status,
+          watchedEpisodeIds: _watchedEpisodeIds,
           onMarkEpisode: (episodeId) async {
-            if (_progress != null) {
-              await context
-                  .read<ProgressProvider>()
-                  .markEpisode(_progress!.id, episodeId, true);
+  try {
+    var progress = _progress;
+
+    if (progress == null) {
+      progress = await context
+          .read<ProgressProvider>()
+          .startProgress(widget.contentId);
+
+      if (mounted) {
+        setState(() => _progress = progress);
+      }
+    }
+
+    if (progress.status != 'InProgress') {
+      progress = await context.read<ProgressProvider>().changeStatus(
+            progress.id,
+            'InProgress',
+          );
+
+      if (mounted) {
+        setState(() => _progress = progress);
+      }
+    }
+
+    if (_watchedEpisodeIds.contains(episodeId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Episode already marked as watched.'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+      return;
+    }
+
+    await context.read<ProgressProvider>().markEpisode(
+          progress.id,
+          episodeId,
+          true,
+        );
+              if (mounted) setState(() => _watchedEpisodeIds.add(episodeId));
               final updated = await context
                   .read<ProgressProvider>()
                   .getForContent(widget.contentId);
@@ -834,6 +1076,23 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
                   label: 'Best character in this episode?',
                 );
               }
+            } catch (e) {
+              final msg = e.toString();
+              // backend može vratiti conflict ako je već označeno — tretiramo kao uspjeh
+              if (msg.toLowerCase().contains('already') ||
+                  msg.contains('409') ||
+                  msg.toLowerCase().contains('conflict')) {
+                if (mounted) setState(() => _watchedEpisodeIds.add(episodeId));
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(msg),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
             }
           },
           onOpenComments: (episode) {
@@ -842,6 +1101,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
               MaterialPageRoute(
                 builder: (_) => EpisodeCommentsScreen(
                   episodeId: episode.id,
+                  contentId: widget.contentId, // DODANO
                   episodeTitle: episode.title,
                 ),
               ),
@@ -901,23 +1161,59 @@ class _ContentDetailScreenState extends State<ContentDetailScreen>
               : null,
           trailing: _progress != null
               ? IconButton(
-                  icon: const Icon(Icons.check_circle_outline,
-                      color: AppColors.textFaint, size: 20),
+                  icon: Icon(
+                    _readChapterIds.contains(ch.id)
+                        ? Icons.check_circle_rounded
+                        : Icons.check_circle_outline,
+                    color: _readChapterIds.contains(ch.id)
+                        ? AppColors.success
+                        : AppColors.textFaint,
+                    size: 20,
+                  ),
                   onPressed: () async {
-                    await context
-                        .read<ProgressProvider>()
-                        .markChapter(_progress!.id, ch.id, true);
-                    final updated = await context
-                        .read<ProgressProvider>()
-                        .getForContent(widget.contentId);
-                    if (mounted) setState(() => _progress = updated);
-                    if (mounted && _characters.isNotEmpty) {
-                      await showVoteDialog(
-                        context,
-                        characters: _characters,
-                        chapterId: ch.id,
-                        label: 'Best character in this chapter?',
+                    if (_readChapterIds.contains(ch.id)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Chapter already marked as read.'),
+                          backgroundColor: AppColors.warning,
+                          duration: Duration(seconds: 2),
+                        ),
                       );
+                      return;
+                    }
+                    try {
+                      await context
+                          .read<ProgressProvider>()
+                          .markChapter(_progress!.id, ch.id, true);
+                      if (mounted) setState(() => _readChapterIds.add(ch.id));
+                      final updated = await context
+                          .read<ProgressProvider>()
+                          .getForContent(widget.contentId);
+                      if (mounted) setState(() => _progress = updated);
+                      if (mounted && _characters.isNotEmpty) {
+                        await showVoteDialog(
+                          context,
+                          characters: _characters,
+                          chapterId: ch.id,
+                          label: 'Best character in this chapter?',
+                        );
+                      }
+                    } catch (e) {
+                      final msg = e.toString();
+                      if (msg.toLowerCase().contains('already') ||
+                          msg.contains('409') ||
+                          msg.toLowerCase().contains('conflict')) {
+                        if (mounted) setState(() => _readChapterIds.add(ch.id));
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(msg),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                        }
+                      }
                     }
                   },
                 )
@@ -1034,8 +1330,10 @@ class _SeasonTile extends StatelessWidget {
   final bool isExpanded;
   final VoidCallback onToggle;
   final int? progressId;
+  final Set<int> watchedEpisodeIds;
   final Future<void> Function(int episodeId) onMarkEpisode;
   final void Function(Episode episode) onOpenComments;
+  final String? progressStatus;
 
   const _SeasonTile({
     required this.season,
@@ -1043,6 +1341,8 @@ class _SeasonTile extends StatelessWidget {
     required this.isExpanded,
     required this.onToggle,
     required this.progressId,
+      required this.progressStatus,
+    required this.watchedEpisodeIds,
     required this.onMarkEpisode,
     required this.onOpenComments,
   });
@@ -1123,7 +1423,8 @@ class _SeasonTile extends StatelessWidget {
                   children: episodes
                       .map((e) => _EpisodeTile(
                             episode: e,
-                            canMark: progressId != null,
+                            canMark: progressId != null && progressStatus == 'InProgress',
+                            isWatched: watchedEpisodeIds.contains(e.id),
                             onMark: () => onMarkEpisode(e.id),
                             onOpenComments: () => onOpenComments(e),
                           ))
@@ -1138,12 +1439,14 @@ class _SeasonTile extends StatelessWidget {
 class _EpisodeTile extends StatelessWidget {
   final Episode episode;
   final bool canMark;
+  final bool isWatched;
   final VoidCallback onMark;
   final VoidCallback onOpenComments;
 
   const _EpisodeTile({
     required this.episode,
     required this.canMark,
+    required this.isWatched,
     required this.onMark,
     required this.onOpenComments,
   });
@@ -1158,14 +1461,14 @@ class _EpisodeTile extends StatelessWidget {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: isWatched ? AppColors.success.withOpacity(0.15) : AppColors.surface,
             borderRadius: BorderRadius.circular(6),
           ),
           child: Center(
             child: Text(
               'E${episode.episodeNumber}',
-              style: const TextStyle(
-                  color: AppColors.textMuted,
+              style: TextStyle(
+                  color: isWatched ? AppColors.success : AppColors.textMuted,
                   fontSize: 10,
                   fontWeight: FontWeight.w600),
             ),
@@ -1173,10 +1476,12 @@ class _EpisodeTile extends StatelessWidget {
         ),
         title: Text(
           episode.title,
-          style: const TextStyle(
-              color: AppColors.textSecondary,
+          style: TextStyle(
+              color: isWatched ? AppColors.textMuted : AppColors.textSecondary,
               fontSize: 13,
-              fontWeight: FontWeight.w400),
+              fontWeight: FontWeight.w400,
+              decoration: isWatched ? TextDecoration.lineThrough : null,
+              decorationColor: AppColors.textMuted),
         ),
         subtitle: Text(
           formatDate(episode.airDate),
@@ -1186,20 +1491,23 @@ class _EpisodeTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Comments button
             IconButton(
               icon: const Icon(Icons.chat_bubble_outline_rounded,
                   color: AppColors.textFaint, size: 18),
               onPressed: onOpenComments,
               tooltip: 'Comments',
             ),
-            // Mark as watched button
             if (canMark)
               IconButton(
-                icon: const Icon(Icons.check_circle_outline,
-                    color: AppColors.textFaint, size: 18),
+                icon: Icon(
+                  isWatched
+                      ? Icons.check_circle_rounded
+                      : Icons.check_circle_outline,
+                  color: isWatched ? AppColors.success : AppColors.textFaint,
+                  size: 18,
+                ),
                 onPressed: onMark,
-                tooltip: 'Mark as watched',
+                tooltip: isWatched ? 'Already watched' : 'Mark as watched',
               ),
           ],
         ),

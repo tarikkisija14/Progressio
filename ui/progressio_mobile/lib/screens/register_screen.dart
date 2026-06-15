@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import 'package:progressio_mobile/core/api_client.dart';
 import 'package:progressio_mobile/layouts/main_navigation.dart';
 import 'package:progressio_mobile/providers/auth_provider.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
-import 'package:http/http.dart' as http;
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -27,10 +25,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscureConfirm = true;
   String? _error;
 
-  static const _baseUrl = String.fromEnvironment(
-    'baseUrl',
-    defaultValue: 'https://localhost:7204/api/',
-  );
 
   @override
   void dispose() {
@@ -80,49 +74,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      final uri = Uri.parse('${_baseUrl}auth/register');
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      final response = await ApiClient.post(
+        'auth/register',
+        requiresAuth: false,
+        body: {
           'firstName': _firstNameCtrl.text.trim(),
           'lastName': _lastNameCtrl.text.trim(),
           'username': _usernameCtrl.text.trim(),
           'email': _emailCtrl.text.trim(),
           'password': _passwordCtrl.text,
-        }),
+        },
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        // Backend returns: { accessToken, refreshToken, user: { id, username, isPremium, ... } }
-        final user = data['user'] as Map<String, dynamic>;
-        AuthProvider.token = data['accessToken'];
-        AuthProvider.refreshToken = data['refreshToken'];
-        AuthProvider.username = _usernameCtrl.text.trim();
-        AuthProvider.password = _passwordCtrl.text;
-        AuthProvider.userId = user['id'];
-        AuthProvider.isPremium = user['isPremium'] ?? false;
-        AuthProvider.userRole = data['role'];
+      AuthProvider.applyLoginResponse(
+        ApiClient.decode(response) as Map<String, dynamic>,
+      );
 
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const MainNavigation()),
-            (_) => false,
-          );
-        }
-      } else {
-        String message = 'Registration failed. Please try again.';
-        try {
-          final data = jsonDecode(response.body);
-          message = data['message'] ?? message;
-        } catch (_) {}
-        setState(() => _error = message);
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const MainNavigation()),
+          (_) => false,
+        );
       }
     } catch (e) {
-      setState(() =>
-          _error = 'Connection error. Check that the server is running.');
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -1,6 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:progressio_mobile/core/api_client.dart';
+import 'package:progressio_mobile/core/api_config.dart';
 import 'package:progressio_mobile/screens/home_screen.dart';
 import 'package:provider/provider.dart';
 
@@ -30,8 +31,31 @@ import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/providers/vote_provider.dart';
 
 
-void main() {
-  HttpOverrides.global = _DevHttpOverrides();
+import 'package:flutter_stripe/flutter_stripe.dart';
+final navigatorKey = GlobalKey<NavigatorState>();
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  debugPrint('MAIN START');
+
+  try {
+    debugPrint('STRIPE BEFORE');
+
+    if (ApiConfig.stripePublishableKey.isEmpty) {
+      throw Exception('STRIPE_PUBLISHABLE_KEY is not configured.');
+    }
+
+    Stripe.publishableKey = ApiConfig.stripePublishableKey;
+    await Stripe.instance.applySettings();
+
+    debugPrint('STRIPE AFTER');
+  } catch (e) {
+    debugPrint('STRIPE INIT ERROR: $e');
+  }
+
+  debugPrint('RUNAPP BEFORE');
+
   runApp(
     MultiProvider(
       providers: [
@@ -60,14 +84,8 @@ void main() {
       child: const ProgressioApp(),
     ),
   );
-}
 
-class _DevHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback = (cert, host, port) => true;
-  }
+  debugPrint('RUNAPP AFTER');
 }
 
 class ProgressioApp extends StatelessWidget {
@@ -75,7 +93,15 @@ class ProgressioApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    ApiClient.onSessionExpired = () {
+      navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    };
+
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Progressio',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),

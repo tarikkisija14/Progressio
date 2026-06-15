@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:progressio_mobile/core/api_client.dart';
 import 'package:provider/provider.dart';
 
 import 'package:progressio_mobile/model/achievement.dart';
@@ -14,13 +15,13 @@ import 'package:progressio_mobile/providers/user_list_provider.dart';
 import 'package:progressio_mobile/providers/user_provider.dart';
 import 'package:progressio_mobile/screens/achievements_screen.dart';
 import 'package:progressio_mobile/screens/change_password_screen.dart';
+import 'package:progressio_mobile/screens/edit_profile_screen.dart';
 import 'package:progressio_mobile/screens/login_screen.dart';
 import 'package:progressio_mobile/screens/premium_screen.dart';
 import 'package:progressio_mobile/screens/stats_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
 import 'dart:typed_data';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:progressio_mobile/widgets/skeleton_loader.dart';
@@ -158,6 +159,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _openEditProfile() async {
+    final user = _user;
+    if (user == null) return;
+
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditProfileScreen(user: user),
+      ),
+    );
+
+    if (updated == true && mounted) {
+      await _loadUser();
+    }
+  }
+
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -182,19 +198,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    // Call backend logout if we have a refresh token
-    if (AuthProvider.refreshToken != null) {
+    final refreshToken = AuthProvider.refreshToken;
+    if (refreshToken == null || refreshToken.isEmpty) {
+      AuthProvider.clear();
+    } else {
       try {
         await context.read<UserProvider>().postRaw(
           'auth/logout',
-          {'refreshToken': AuthProvider.refreshToken},
+          {'refreshToken': refreshToken},
         );
-      } catch (_) {
-        // Ignore errors — clear local state regardless
+        AuthProvider.clear();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Sign out failed: $e'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
       }
     }
-
-    AuthProvider.clear();
 
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -454,46 +479,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     try {
-      final baseUrl = const String.fromEnvironment(
-        'baseUrl',
-        defaultValue: 'https://localhost:7204/api/',
-      );
-      final token = AuthProvider.token ?? '';
-      final url = '${baseUrl}export/me';
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      final response = await ApiClient.get('export/me');
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-      if (response.statusCode == 200) {
-        final dir = await getApplicationDocumentsDirectory();
-        final fileName =
-            'progressio_export_${DateTime.now().millisecondsSinceEpoch}.json';
-        final file = File('${dir.path}/$fileName');
-        await file.writeAsBytes(response.bodyBytes);
+      final dir = await getApplicationDocumentsDirectory();
+      final fileName =
+          'progressio_export_${DateTime.now().millisecondsSinceEpoch}.json';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(response.bodyBytes);
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Export saved: $fileName'),
-              backgroundColor: AppColors.success,
-              action: SnackBarAction(
-                label: 'OK',
-                textColor: Colors.white,
-                onPressed: () {},
-              ),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export saved: $fileName'),
+            backgroundColor: AppColors.success,
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
             ),
-          );
-        }
-      } else {
-        throw Exception('Server returned ${response.statusCode}');
+          ),
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -785,6 +793,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           const _SectionTitle(title: 'More'),
           const SizedBox(height: 10),
+          _quickLinkTile(
+            icon: Icons.edit_outlined,
+            label: 'Edit Profile',
+            onTap: _openEditProfile,
+          ),
           _quickLinkTile(
             icon: Icons.bar_chart_rounded,
             label: 'Full Stats',

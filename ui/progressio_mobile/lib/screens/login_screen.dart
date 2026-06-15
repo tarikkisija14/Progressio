@@ -1,12 +1,11 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import 'package:progressio_mobile/core/api_client.dart';
 import 'package:progressio_mobile/layouts/main_navigation.dart';
 import 'package:progressio_mobile/providers/auth_provider.dart';
+import 'package:progressio_mobile/screens/forgot_password_screen.dart';
 import 'package:progressio_mobile/screens/register_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/widgets/app_ui.dart';
-import 'package:http/http.dart' as http;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,10 +21,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscure = true;
   String? _error;
 
-  static const _baseUrl = String.fromEnvironment(
-    'baseUrl',
-    defaultValue: 'https://localhost:7204/api/',
-  );
 
   @override
   void dispose() {
@@ -36,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     final username = _usernameCtrl.text.trim();
-    final password = _passwordCtrl.text.trim();
+    final password = _passwordCtrl.text;
 
     if (username.isEmpty || password.isEmpty) {
       setState(() => _error = 'Please enter username and password.');
@@ -49,41 +44,24 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final uri = Uri.parse('${_baseUrl}auth/login');
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
+      final response = await ApiClient.post(
+        'auth/login',
+        body: {'username': username, 'password': password},
+        requiresAuth: false,
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        // Backend returns: { accessToken, refreshToken, user: { id, username, isPremium, ... } }
-        final user = data['user'] as Map<String, dynamic>;
-        AuthProvider.token = data['accessToken'];
-        AuthProvider.refreshToken = data['refreshToken'];
-        AuthProvider.username = username;
-        AuthProvider.password = password;
-        AuthProvider.userId = user['id'];
-        AuthProvider.isPremium = user['isPremium'] ?? false;
-        AuthProvider.userRole = data['role'];
+      AuthProvider.applyLoginResponse(
+        ApiClient.decode(response) as Map<String, dynamic>,
+      );
 
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const MainNavigation()),
-          );
-        }
-      } else {
-        String message = 'Invalid credentials.';
-        try {
-          final data = jsonDecode(response.body);
-          message = data['message'] ?? message;
-        } catch (_) {}
-        setState(() => _error = message);
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MainNavigation()),
+        );
       }
     } catch (e) {
-      setState(() => _error = 'Connection error. Check that the server is running.');
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -172,6 +150,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _login(),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ForgotPasswordScreen(),
+                      ),
+                    ),
+                    child: const Text('Forgot password?'),
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 14),
