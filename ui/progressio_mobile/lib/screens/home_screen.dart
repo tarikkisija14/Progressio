@@ -563,13 +563,26 @@ class _ProgressCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Container(
-                      color: AppColors.surface,
-                      child: const Center(
-                        child: Icon(Icons.movie_rounded,
-                            color: AppColors.textFaint, size: 28),
-                      ),
-                    ),
+                    progress.contentCoverImageUrl != null &&
+        progress.contentCoverImageUrl!.isNotEmpty
+    ? CachedNetworkImage(
+        imageUrl: progress.contentCoverImageUrl!,
+        fit: BoxFit.cover,
+        placeholder: (_, __) =>
+            Container(color: AppColors.surface),
+        errorWidget: (_, __, ___) =>
+            Container(color: AppColors.surface),
+      )
+    : Container(
+        color: AppColors.surface,
+        child: const Center(
+          child: Icon(
+            Icons.movie_rounded,
+            color: AppColors.textFaint,
+            size: 28,
+          ),
+        ),
+      ),
                     Positioned(
                       bottom: 6,
                       left: 6,

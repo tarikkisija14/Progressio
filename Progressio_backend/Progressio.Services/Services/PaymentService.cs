@@ -67,11 +67,41 @@ namespace Progressio.Services.Services
             if (hasActiveSubscription)
                 throw new BusinessException("You already have an active Premium subscription.");
 
-            var hasPendingPayment = await _db.Payments
-                .AnyAsync(p => p.UserId == userId && p.Status == PaymentStatus.Pending);
+            var staleThreshold = DateTime.UtcNow.AddMinutes(-1);
 
-            if (hasPendingPayment)
-                throw new BusinessException("A payment is already in progress. Complete or cancel it before starting another payment.");
+            var pendingPayments = await _db.Payments
+                .Include(p => p.Subscription)
+                .Where(p =>
+                    p.UserId == userId &&
+                    p.Status == PaymentStatus.Pending &&
+                    p.Subscription.StartDate < staleThreshold)
+                .ToListAsync();
+
+            foreach (var pendingPayment in pendingPayments)
+            {
+                pendingPayment.Status = PaymentStatus.Failed;
+
+                if (pendingPayment.Subscription.Status == SubscriptionStatus.Expired)
+                {
+                    pendingPayment.Subscription.Status = SubscriptionStatus.Cancelled;
+                }
+            }
+
+            if (pendingPayments.Count > 0)
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            var hasActivePendingPayment = await _db.Payments
+                .AnyAsync(p =>
+                    p.UserId == userId &&
+                    p.Status == PaymentStatus.Pending);
+
+            if (hasActivePendingPayment)
+            {
+                throw new BusinessException(
+                    "A payment is already in progress. Complete or cancel it before starting another payment.");
+            }
 
             await using var transaction = await _db.Database.BeginTransactionAsync();
 
@@ -138,7 +168,11 @@ namespace Progressio.Services.Services
             Event stripeEvent;
             try
             {
-                stripeEvent = EventUtility.ConstructEvent(payload, stripeSignature, _webhookSecret);
+                stripeEvent = EventUtility.ConstructEvent(
+    payload,
+    stripeSignature,
+    _webhookSecret,
+    throwOnApiVersionMismatch: false);
             }
             catch (StripeException ex)
             {

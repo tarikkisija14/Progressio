@@ -579,7 +579,8 @@ namespace Progressio.Services.Services
                 WatchedEpisodesCount = watchedEpisodes,
                 TotalEpisodesCount = totalEpisodes,
                 ReadChaptersCount = readChapters,
-                TotalChaptersCount = totalChapters
+                TotalChaptersCount = totalChapters,
+                ContentCoverImageUrl = p.Content.CoverImageUrl,
             };
         }
 

@@ -23,5 +23,6 @@ namespace Progressio.Model.Responses.ProgressResponses
         public int TotalEpisodesCount { get; set; }
         public int ReadChaptersCount { get; set; }
         public int TotalChaptersCount { get; set; }
+        public string? ContentCoverImageUrl { get; set; }
     }
 }

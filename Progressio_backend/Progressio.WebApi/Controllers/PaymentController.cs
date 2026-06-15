@@ -55,15 +55,16 @@ namespace Progressio.WebApi.Controllers
         }
 
         [HttpPost("api/stripe/webhook")]
-        [Authorize(AuthenticationSchemes = StripeWebhookAuthenticationDefaults.Scheme)]
+        [AllowAnonymous]
         public async Task<IActionResult> StripeWebhook()
         {
             using var reader = new StreamReader(HttpContext.Request.Body);
             var payload = await reader.ReadToEndAsync();
-            var stripeSignature = Request.Headers[StripeWebhookAuthenticationDefaults.SignatureHeader]
-                .FirstOrDefault() ?? string.Empty;
+
+            var stripeSignature = Request.Headers["Stripe-Signature"].ToString();
 
             await _paymentService.HandleWebhookAsync(payload, stripeSignature);
+
             return Ok();
         }
     }

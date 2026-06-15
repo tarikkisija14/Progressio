@@ -12,6 +12,7 @@ class UserProgress {
   final int totalEpisodesCount;
   final int readChaptersCount;
   final int totalChaptersCount;
+  final String? contentCoverImageUrl;
 
   UserProgress({
     this.id = 0,
@@ -27,6 +28,7 @@ class UserProgress {
     this.totalEpisodesCount = 0,
     this.readChaptersCount = 0,
     this.totalChaptersCount = 0,
+   this.contentCoverImageUrl,
   });
 
  
@@ -60,6 +62,7 @@ class UserProgress {
       totalEpisodesCount: json['totalEpisodesCount'] ?? 0,
       readChaptersCount: json['readChaptersCount'] ?? 0,
       totalChaptersCount: json['totalChaptersCount'] ?? 0,
+      contentCoverImageUrl: json['contentCoverImageUrl'] as String?,
     );
   }
 }
