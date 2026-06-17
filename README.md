@@ -47,8 +47,8 @@ The backend (API + Worker + SQL Server + RabbitMQ) is fully containerized and is
    ```
 3. On first start, the API automatically applies EF Core migrations and seeds lookup data, roles and demo users — no manual DB setup is required.
 4. Once the containers are healthy:
-   - API base URL: `http://localhost:5193/api/`
-   - Swagger UI (Development environment only): `http://localhost:5193/swagger`
+   - API base URL: `http://localhost:5000/api/`
+   - Swagger UI (Development environment only): `http://localhost:5000/swagger`
    - RabbitMQ management UI: `http://localhost:15672` (user/password from `RABBITMQ_USER` / `RABBITMQ_PASS` in `.env`)
    - SQL Server: `localhost,1433` (user `sa`, password from `DB_PASSWORD` in `.env`)
 
@@ -73,6 +73,12 @@ This is only needed for development; it is **not** required to review the submis
 
 ## Running the desktop app (Windows / Flutter)
 
+The `API_BASE_URL` must point to wherever the API is actually listening:
+- **API running via Docker** (`docker compose up`): use port `5000` (or whatever `API_PORT` is set to in `.env`).
+- **API running locally via Visual Studio / `dotnet run`**: use port `5193` (the default from `launchSettings.json`).
+
+> If `--dart-define=API_BASE_URL=...` is omitted, the app falls back to a built-in default that targets the **local (non-Docker) API on port 5193**. When reviewing the app against the Dockerized backend, always pass `API_BASE_URL` explicitly with port `5000`.
+
 ```bash
 cd ui/progressio_desktop
 flutter pub get
@@ -81,7 +87,7 @@ flutter run -d windows --dart-define=API_BASE_URL=http://localhost:5193/api/
 
 ## Running the mobile app (Android / Flutter)
 
-Against the Android emulator (AVD), the API must be reached through the standard emulator host alias `10.0.2.2`:
+Against the Android emulator (AVD), the API must be reached through the standard emulator host alias `10.0.2.2`, using whichever port the API is actually listening on (`5193` for local `dotnet run`, `5000` for Docker):
 
 ```bash
 cd ui/progressio_mobile
