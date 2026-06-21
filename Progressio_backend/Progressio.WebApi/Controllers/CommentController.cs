@@ -97,6 +97,8 @@ namespace Progressio.WebApi.Controllers
             [FromBody] CommentInsertRequest request)
         {
             request.EpisodeId = id;
+            
+            request.ContentId = 0;
             var result = await _commentService.AddCommentAsync(_currentUser.UserId, request);
             return CreatedAtAction(nameof(GetByEpisode), new { id }, result);
         }
@@ -108,6 +110,8 @@ namespace Progressio.WebApi.Controllers
             [FromBody] CommentInsertRequest request)
         {
             request.ChapterId = id;
+           
+            request.ContentId = 0;
             var result = await _commentService.AddCommentAsync(_currentUser.UserId, request);
             return CreatedAtAction(nameof(GetByChapter), new { id }, result);
         }

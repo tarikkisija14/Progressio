@@ -17,7 +17,7 @@ namespace Progressio.Services.Services
             [ProgressStatus.Pending] = [ProgressStatus.InProgress, ProgressStatus.Cancelled],
             [ProgressStatus.InProgress] = [ProgressStatus.Completed, ProgressStatus.Cancelled, ProgressStatus.OnHold],
             [ProgressStatus.OnHold] = [ProgressStatus.InProgress, ProgressStatus.Cancelled],
-            [ProgressStatus.Completed] = [ProgressStatus.InProgress],
+            [ProgressStatus.Completed] = [],
             [ProgressStatus.Cancelled] = []
         };
 

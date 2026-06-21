@@ -38,23 +38,39 @@ namespace Progressio.Services.Services
                 throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
 
 
+            
             var character = await _db.Characters
                 .FirstOrDefaultAsync(c => c.Id == request.CharacterId)
                 ?? throw new NotFoundException("Character", request.CharacterId);
 
+           
+            var progress = await _db.UserContentProgresses
+                .FirstOrDefaultAsync(p => p.UserId == userId && p.ContentId == character.ContentId);
 
+            if (progress is null || progress.Status != Progressio.Model.Enums.ProgressStatus.Completed)
+                throw new BusinessException("You can only vote for characters after completing the content.");
+
+           
             if (request.EpisodeId.HasValue)
             {
-                var episodeExists = await _db.Episodes.AnyAsync(e => e.Id == request.EpisodeId.Value);
-                if (!episodeExists)
-                    throw new NotFoundException("Episode", request.EpisodeId.Value);
+                var episode = await _db.Episodes
+                    .Include(e => e.Season)
+                    .FirstOrDefaultAsync(e => e.Id == request.EpisodeId.Value)
+                    ?? throw new NotFoundException("Episode", request.EpisodeId.Value);
+
+                if (episode.Season.ContentId != character.ContentId)
+                    throw new BusinessException("Episode does not belong to the same content as the character.");
             }
 
+           
             if (request.ChapterId.HasValue)
             {
-                var chapterExists = await _db.Chapters.AnyAsync(c => c.Id == request.ChapterId.Value);
-                if (!chapterExists)
-                    throw new NotFoundException("Chapter", request.ChapterId.Value);
+                var chapter = await _db.Chapters
+                    .FirstOrDefaultAsync(c => c.Id == request.ChapterId.Value)
+                    ?? throw new NotFoundException("Chapter", request.ChapterId.Value);
+
+                if (chapter.ContentId != character.ContentId)
+                    throw new BusinessException("Chapter does not belong to the same content as the character.");
             }
 
 
@@ -154,4 +170,3 @@ namespace Progressio.Services.Services
 
     }
 }
-

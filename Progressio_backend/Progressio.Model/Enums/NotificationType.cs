@@ -9,5 +9,6 @@ public enum NotificationType
     NewFollower,
     CommentLiked,
     PaymentConfirmed,
+    PaymentRefunded,
     ListInvite
 }

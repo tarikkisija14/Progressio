@@ -16,7 +16,7 @@ using System.Threading.Tasks;
 
 namespace Progressio.Services.Services
 {
-    public class ReviewService:IReviewService
+    public class ReviewService : IReviewService
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<ReviewService> _logger;
@@ -42,21 +42,22 @@ namespace Progressio.Services.Services
             if (!validationResult.IsValid)
                 throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
 
-            
+
             var content = await _db.Contents
                 .FirstOrDefaultAsync(c => c.Id == request.ContentId && c.IsActive)
                 ?? throw new NotFoundException("Content", request.ContentId);
 
-            
+
             var progress = await _db.UserContentProgresses
                 .FirstOrDefaultAsync(p => p.UserId == userId && p.ContentId == request.ContentId);
 
             if (progress is null || progress.Status != ProgressStatus.Completed)
                 throw new BusinessException("You can only review content that you have completed.");
 
-            
+
+           
             var existing = await _db.Reviews
-                .FirstOrDefaultAsync(r => r.UserId == userId && r.ContentId == request.ContentId);
+                .FirstOrDefaultAsync(r => r.UserId == userId && r.ContentId == request.ContentId && r.IsVisible);
 
             if (existing is not null)
                 throw new BusinessException("You have already reviewed this content.");
@@ -76,7 +77,7 @@ namespace Progressio.Services.Services
             _db.Reviews.Add(review);
 
             
-            await UpdateContentAvgRatingAsync(content, request.Rating, isNew: true);
+            await RecalculateAvgRatingAsync(content);
 
             await _db.SaveChangesAsync();
 
@@ -92,7 +93,7 @@ namespace Progressio.Services.Services
 
             var review = await _db.Reviews
                 .Include(r => r.Content)
-                .FirstOrDefaultAsync(r => r.Id == reviewId)
+                .FirstOrDefaultAsync(r => r.Id == reviewId && r.IsVisible)
                 ?? throw new NotFoundException("Review", reviewId);
 
             if (review.UserId != userId)
@@ -105,15 +106,9 @@ namespace Progressio.Services.Services
             review.Body = request.Body;
             review.HasSpoiler = request.HasSpoiler;
 
-            
+          
             if (oldRating != request.Rating)
-            {
-                var content = review.Content;
-                
-                var totalScore = content.AvgRating * content.TotalRatings;
-                totalScore = totalScore - oldRating + request.Rating;
-                content.AvgRating = content.TotalRatings > 0 ? Math.Round(totalScore / content.TotalRatings, 2) : 0;
-            }
+                await RecalculateAvgRatingAsync(review.Content);
 
             await _db.SaveChangesAsync();
 
@@ -132,7 +127,7 @@ namespace Progressio.Services.Services
             if (searchObject.ContentId.HasValue)
                 query = query.Where(r => r.ContentId == searchObject.ContentId.Value);
 
-            
+
             if (searchObject.HideSpoilers == true)
                 query = query.Where(r => !r.HasSpoiler);
 
@@ -204,35 +199,35 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(r => r.Id == reviewId)
                 ?? throw new NotFoundException("Review", reviewId);
 
-            
+           
+            if (!review.IsVisible)
+            {
+                _logger.LogInformation("Admin delete on already-hidden review {ReviewId} — no-op.", reviewId);
+                return;
+            }
+
             review.IsVisible = false;
 
-            
             var content = await _db.Contents.FirstOrDefaultAsync(c => c.Id == review.ContentId);
-            if (content is not null && content.TotalRatings > 1)
-            {
-                var totalScore = content.AvgRating * content.TotalRatings - review.Rating;
-                content.TotalRatings -= 1;
-                content.AvgRating = Math.Round(totalScore / content.TotalRatings, 2);
-            }
-            else if (content is not null)
-            {
-                content.TotalRatings = 0;
-                content.AvgRating = 0;
-            }
+            if (content is not null)
+                await RecalculateAvgRatingAsync(content);
 
             await _db.SaveChangesAsync();
 
             _logger.LogInformation("Admin soft-deleted review {ReviewId}", reviewId);
         }
-        private async Task UpdateContentAvgRatingAsync(Content content, int newRating, bool isNew)
+      
+        private async Task RecalculateAvgRatingAsync(Content content)
         {
-            if (isNew)
-            {
-                var totalScore = content.AvgRating * content.TotalRatings + newRating;
-                content.TotalRatings += 1;
-                content.AvgRating = Math.Round(totalScore / content.TotalRatings, 2);
-            }
+            var visibleRatings = await _db.Reviews
+                .Where(r => r.ContentId == content.Id && r.IsVisible)
+                .Select(r => r.Rating)
+                .ToListAsync();
+
+            content.TotalRatings = visibleRatings.Count;
+            content.AvgRating = visibleRatings.Count > 0
+                ? Math.Round(visibleRatings.Average(r => r), 2)
+                : 0;
         }
         private async Task<ReviewResponse> BuildReviewResponseAsync(int reviewId)
         {

@@ -268,6 +268,10 @@ namespace Progressio.Services.Services
             if (!result.Succeeded)
                 throw new BusinessException("Password reset token is invalid or expired.");
 
+            var stampResult = await _userManager.UpdateSecurityStampAsync(user);
+            if (!stampResult.Succeeded)
+                throw new BusinessException(string.Join("; ", stampResult.Errors.Select(e => e.Description)));
+
             var activeTokens = await _db.RefreshTokens
                 .Where(rt => rt.UserId == user.Id && rt.RevokedAt == null)
                 .ToListAsync();
@@ -278,7 +282,9 @@ namespace Progressio.Services.Services
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            _logger.LogInformation("Password reset completed for User {UserId}.", user.Id);
+            _logger.LogInformation(
+                "Password reset completed for User {UserId}. Security stamp rotated; all existing access and refresh tokens invalidated.",
+                user.Id);
         }
 
         public async Task ChangePasswordAsync(int userId, ChangePasswordRequest request)
@@ -297,6 +303,10 @@ namespace Progressio.Services.Services
             if (!result.Succeeded)
                 throw new BusinessException(string.Join("; ", result.Errors.Select(e => e.Description)));
 
+            var stampResult = await _userManager.UpdateSecurityStampAsync(user);
+            if (!stampResult.Succeeded)
+                throw new BusinessException(string.Join("; ", stampResult.Errors.Select(e => e.Description)));
+
             var tokens = await _db.RefreshTokens
                 .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
                 .ToListAsync();
@@ -306,7 +316,9 @@ namespace Progressio.Services.Services
 
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
-            _logger.LogInformation("Password changed for user Id={UserId}", userId);
+            _logger.LogInformation(
+                "Password changed for user Id={UserId}. Security stamp rotated; all existing access and refresh tokens invalidated.",
+                userId);
         }
 
         public async Task<string> UploadProfileImageAsync(int userId, IFormFile file)

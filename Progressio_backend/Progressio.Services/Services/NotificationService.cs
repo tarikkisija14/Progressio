@@ -88,6 +88,7 @@ namespace Progressio.Services.Services
                 "Follow" => NotificationType.NewFollower,
                 "CommentLiked" => NotificationType.CommentLiked,
                 "PaymentConfirmed" => NotificationType.PaymentConfirmed,
+                "PaymentRefunded" => NotificationType.PaymentRefunded,
                 "ListInvite" => NotificationType.ListInvite,
                 _ => NotificationType.StatusChanged
             };

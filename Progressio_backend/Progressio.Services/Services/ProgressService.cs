@@ -70,7 +70,12 @@ namespace Progressio.Services.Services
 
             if (existing is not null)
             {
-                if (existing.Status == ProgressStatus.Cancelled || existing.Status == ProgressStatus.Completed)
+                if (existing.Status == ProgressStatus.Completed || existing.Status == ProgressStatus.Cancelled)
+                    throw new BusinessException(
+                        $"Cannot restart progress that is already '{existing.Status}'. " +
+                        "Completed and Cancelled are terminal states.");
+
+                if (existing.Status != ProgressStatus.InProgress)
                 {
                     _stateMachine.Transition(existing, ProgressStatus.InProgress, userId);
                     await _db.SaveChangesAsync();
@@ -217,11 +222,8 @@ namespace Progressio.Services.Services
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only update your own progress.");
 
-            if (progress.Status == ProgressStatus.Cancelled)
-                throw new BusinessException($"Cannot mark episode on progress with status '{progress.Status}'.");
-
-            if (progress.Status == ProgressStatus.Completed && request.IsWatched)
-                _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
+            if (progress.Status == ProgressStatus.Cancelled || progress.Status == ProgressStatus.Completed)
+                throw new BusinessException($"Cannot mark episode on progress with status '{progress.Status}'. Completed and Cancelled are terminal states.");
 
             var episode = await _db.Episodes
                 .Include(e => e.Season)
@@ -349,11 +351,8 @@ namespace Progressio.Services.Services
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only update your own progress.");
 
-            if (progress.Status == ProgressStatus.Cancelled)
-                throw new BusinessException($"Cannot mark chapter on progress with status '{progress.Status}'.");
-
-            if (progress.Status == ProgressStatus.Completed && request.IsRead)
-                _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
+            if (progress.Status == ProgressStatus.Cancelled || progress.Status == ProgressStatus.Completed)
+                throw new BusinessException($"Cannot mark chapter on progress with status '{progress.Status}'. Completed and Cancelled are terminal states.");
 
             var chapter = await _db.Chapters
                 .FirstOrDefaultAsync(c => c.Id == request.ChapterId && c.ContentId == progress.ContentId)

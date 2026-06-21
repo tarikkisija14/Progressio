@@ -4,11 +4,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Progressio.Model.Enums;
 using Progressio.Model.Exceptions;
+using Progressio.Model.Messages;
 using Progressio.Model.Requests.PaymentRequests;
 using Progressio.Model.Responses.PaymentResponses;
 using Progressio.Services.Configuration;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
+using Progressio.Services.Messaging;
 using Stripe;
 using System;
 using System.Collections.Generic;
@@ -25,6 +27,9 @@ namespace Progressio.Services.Services
         private readonly ILogger<PaymentService> _logger;
         private readonly IValidator<CreatePaymentIntentRequest> _createIntentValidator;
         private readonly IValidator<RefundRequest> _refundValidator;
+        private readonly IRabbitMqPublisher _publisher;
+
+        private const string NotificationsQueue = "send_notification";
 
         private static readonly Dictionary<string, (decimal Amount, int DurationDays)> PlanCatalog = new()
     {
@@ -37,13 +42,15 @@ namespace Progressio.Services.Services
        IConfiguration config,
        ILogger<PaymentService> logger,
        IValidator<CreatePaymentIntentRequest> createIntentValidator,
-       IValidator<RefundRequest> refundValidator)
+       IValidator<RefundRequest> refundValidator,
+       IRabbitMqPublisher publisher)
         {
             _db = db;
             _webhookSecret = config.GetRequiredValue("Stripe:WebhookSecret");
             _logger = logger;
             _createIntentValidator = createIntentValidator;
             _refundValidator = refundValidator;
+            _publisher = publisher;
         }
 
         public async Task<PaymentIntentResponse> CreatePaymentIntentAsync(int userId, CreatePaymentIntentRequest request)
@@ -67,9 +74,10 @@ namespace Progressio.Services.Services
             if (hasActiveSubscription)
                 throw new BusinessException("You already have an active Premium subscription.");
 
-            var staleThreshold = DateTime.UtcNow.AddMinutes(-1);
+           
+            var staleThreshold = DateTime.UtcNow.AddHours(-24);
 
-            var pendingPayments = await _db.Payments
+            var stalePayments = await _db.Payments
                 .Include(p => p.Subscription)
                 .Where(p =>
                     p.UserId == userId &&
@@ -77,20 +85,16 @@ namespace Progressio.Services.Services
                     p.Subscription.StartDate < staleThreshold)
                 .ToListAsync();
 
-            foreach (var pendingPayment in pendingPayments)
+            foreach (var stalePayment in stalePayments)
             {
-                pendingPayment.Status = PaymentStatus.Failed;
+                stalePayment.Status = PaymentStatus.Failed;
 
-                if (pendingPayment.Subscription.Status == SubscriptionStatus.Expired)
-                {
-                    pendingPayment.Subscription.Status = SubscriptionStatus.Cancelled;
-                }
+                if (stalePayment.Subscription.Status == SubscriptionStatus.Expired)
+                    stalePayment.Subscription.Status = SubscriptionStatus.Cancelled;
             }
 
-            if (pendingPayments.Count > 0)
-            {
+            if (stalePayments.Count > 0)
                 await _db.SaveChangesAsync();
-            }
 
             var hasActivePendingPayment = await _db.Payments
                 .AnyAsync(p =>
@@ -206,10 +210,20 @@ namespace Progressio.Services.Services
                 return;
             }
 
-            if (payment.Status != PaymentStatus.Pending)
+           
+            if (payment.Status == PaymentStatus.Completed)
             {
                 _logger.LogInformation(
-                    "Webhook: Payment {PaymentId} has status {Status}; duplicate or stale event ignored.",
+                    "Webhook: Payment {PaymentId} already Completed; duplicate event ignored.",
+                    payment.Id);
+                return;
+            }
+
+            
+            if (payment.Status != PaymentStatus.Pending && payment.Status != PaymentStatus.Failed)
+            {
+                _logger.LogInformation(
+                    "Webhook: Payment {PaymentId} has status {Status}; event ignored.",
                     payment.Id,
                     payment.Status);
                 return;
@@ -240,6 +254,23 @@ namespace Progressio.Services.Services
             _logger.LogInformation(
                 "Payment {PaymentId} completed. Subscription {SubId} activated for User {UserId}.",
                 payment.Id, payment.SubscriptionId, payment.UserId);
+
+            try
+            {
+                await _publisher.PublishAsync(NotificationsQueue, new SendNotificationMessage
+                {
+                    UserId = payment.UserId,
+                    Title = "Payment confirmed",
+                    Message = $"Your payment of {payment.Amount} {payment.Currency} was successful. Your subscription is now active.",
+                    NotificationType = "PaymentConfirmed",
+                    RelatedEntityId = payment.Id
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Payment {PaymentId} finalized but notification publish failed.", payment.Id);
+            }
         }
 
         private async Task MarkPaymentFailedAsync(PaymentIntent intent)
@@ -308,6 +339,23 @@ namespace Progressio.Services.Services
                 "Payment {PaymentId} refunded (Charge: {ChargeId}) for User {UserId}.",
                 payment.Id, payment.StripeChargeId, userId);
 
+            try
+            {
+                await _publisher.PublishAsync(NotificationsQueue, new SendNotificationMessage
+                {
+                    UserId = payment.UserId,
+                    Title = "Payment refunded",
+                    Message = $"Your refund of {payment.RefundedAmount} {payment.Currency} has been processed. Your subscription has been cancelled.",
+                    NotificationType = "PaymentRefunded",
+                    RelatedEntityId = payment.Id
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Payment {PaymentId} refunded but notification publish failed.", payment.Id);
+            }
+
             return MapToPaymentResponse(payment);
         }
 
@@ -373,4 +421,3 @@ namespace Progressio.Services.Services
 
 
 }
-

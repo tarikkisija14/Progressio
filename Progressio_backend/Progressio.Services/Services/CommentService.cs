@@ -52,11 +52,11 @@ namespace Progressio.Services.Services
                 .Include(c => c.Chapter)
                 .AsQueryable();
 
-            // Admin može vidjeti skrivene komentare kad postavi IncludeHidden=true ili IsVisible=false
+           
             if (!searchObject.IncludeHidden)
                 query = query.Where(c => c.IsVisible);
 
-            // Admin filter po vidljivosti
+            
             if (searchObject.IsVisible.HasValue)
                 query = query.Where(c => c.IsVisible == searchObject.IsVisible.Value);
 
@@ -72,11 +72,11 @@ namespace Progressio.Services.Services
             if (searchObject.HideSpoilers)
                 query = query.Where(c => !c.HasSpoiler);
 
-            // Admin filter po spoiler flagu
+           
             if (searchObject.HasSpoiler.HasValue)
                 query = query.Where(c => c.HasSpoiler == searchObject.HasSpoiler.Value);
 
-            // Admin filter po korisniku
+           
             if (searchObject.UserId.HasValue)
                 query = query.Where(c => c.UserId == searchObject.UserId.Value);
 
@@ -136,28 +136,41 @@ namespace Progressio.Services.Services
             if (!validationResult.IsValid)
                 throw new BusinessException(string.Join("; ", validationResult.Errors.Select(e => e.ErrorMessage)));
 
-            var content = await _db.Contents
-                .FirstOrDefaultAsync(c => c.Id == request.ContentId && c.IsActive)
-                ?? throw new NotFoundException("Content", request.ContentId);
+            int resolvedContentId;
 
             if (request.EpisodeId.HasValue)
             {
-                var episodeExists = await _db.Episodes.AnyAsync(e => e.Id == request.EpisodeId.Value);
-                if (!episodeExists)
-                    throw new NotFoundException("Episode", request.EpisodeId.Value);
+               
+                var episode = await _db.Episodes
+                    .Include(e => e.Season)
+                    .FirstOrDefaultAsync(e => e.Id == request.EpisodeId.Value)
+                    ?? throw new NotFoundException("Episode", request.EpisodeId.Value);
+
+                resolvedContentId = episode.Season.ContentId;
+            }
+            else if (request.ChapterId.HasValue)
+            {
+              
+                var chapter = await _db.Chapters
+                    .FirstOrDefaultAsync(c => c.Id == request.ChapterId.Value)
+                    ?? throw new NotFoundException("Chapter", request.ChapterId.Value);
+
+                resolvedContentId = chapter.ContentId;
+            }
+            else
+            {
+               
+                resolvedContentId = request.ContentId;
             }
 
-            if (request.ChapterId.HasValue)
-            {
-                var chapterExists = await _db.Chapters.AnyAsync(c => c.Id == request.ChapterId.Value);
-                if (!chapterExists)
-                    throw new NotFoundException("Chapter", request.ChapterId.Value);
-            }
+            var content = await _db.Contents
+                .FirstOrDefaultAsync(c => c.Id == resolvedContentId && c.IsActive)
+                ?? throw new NotFoundException("Content", resolvedContentId);
 
             var comment = new ContentComment
             {
                 UserId = userId,
-                ContentId = request.ContentId,
+                ContentId = resolvedContentId,
                 EpisodeId = request.EpisodeId,
                 ChapterId = request.ChapterId,
                 Text = request.Text,
@@ -172,10 +185,10 @@ namespace Progressio.Services.Services
 
             _logger.LogInformation(
                 "User {UserId} added comment {CommentId} on Content {ContentId}",
-                userId, comment.Id, request.ContentId);
+                userId, comment.Id, resolvedContentId);
 
             var contentOwner = await _db.UserContentProgresses
-                .Where(p => p.ContentId == request.ContentId && p.UserId != userId)
+                .Where(p => p.ContentId == resolvedContentId && p.UserId != userId)
                 .Select(p => p.UserId)
                 .FirstOrDefaultAsync();
 
@@ -210,7 +223,7 @@ namespace Progressio.Services.Services
                 UserFullName = (user?.FirstName ?? "") + " " + (user?.LastName ?? ""),
                 Username = user?.UserName ?? string.Empty,
                 UserProfileImageUrl = user?.ProfileImageUrl,
-                ContentId = comment.ContentId,
+                ContentId = resolvedContentId,
                 EpisodeId = comment.EpisodeId,
                 EpisodeTitle = null,
                 ChapterId = comment.ChapterId,
