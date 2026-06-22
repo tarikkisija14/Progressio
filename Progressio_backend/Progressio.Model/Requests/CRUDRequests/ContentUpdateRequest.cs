@@ -11,6 +11,7 @@
         public int? ReleaseYear { get; set; }
         public bool IsActive { get; set; }
         public List<int> GenreIds { get; set; } = [];
+        public List<int> PlatformIds { get; set; } = [];
     }
 
 }

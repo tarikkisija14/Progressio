@@ -16,6 +16,7 @@ namespace Progressio.Model.Requests.CRUDRequests
         public int? LanguageId { get; set; }
         public int? ReleaseYear { get; set; }
         public List<int> GenreIds { get; set; } = [];
+        public List<int> PlatformIds { get; set; } = [];
     }
 
 }

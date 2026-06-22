@@ -13,11 +13,11 @@ class ApiClient {
   static void Function()? onSessionExpired;
   static bool _refreshInProgress = false;
 
-  // DEV ONLY: trusts self-signed HTTPS dev certificates (dotnet dev-certs).
-  // Do NOT use this in production builds.
-  static final http.Client _client = IOClient(
-    HttpClient()..badCertificateCallback = (cert, host, port) => true,
-  );
+  
+ static final http.Client _client = kDebugMode
+    ? IOClient(HttpClient()..badCertificateCallback = (cert, host, port) => true)
+    : http.Client();
+
 
   static Future<http.Response> get(
     String path, {
@@ -111,8 +111,12 @@ class ApiClient {
     late http.Response response;
     final encodedBody = body == null ? null : jsonEncode(body);
 
-    debugPrint('[ApiClient] -> $method $uri');
-    if (encodedBody != null) debugPrint('[ApiClient] body: $encodedBody');
+    if (kDebugMode) {
+      debugPrint('[ApiClient] -> $method $uri');
+      if (encodedBody != null) {
+        debugPrint('[ApiClient] body: ${_redactBody(encodedBody)}');
+      }
+    }
 
     switch (method) {
       case 'GET':
@@ -131,14 +135,16 @@ class ApiClient {
         throw const ApiException('Unsupported HTTP method.');
     }
 
-    debugPrint('[ApiClient] <- ${response.statusCode} $uri');
-    debugPrint('[ApiClient] response body: ${response.body}');
+    if (kDebugMode) {
+      debugPrint('[ApiClient] <- ${response.statusCode} $uri');
+      debugPrint('[ApiClient] response body: ${_redactBody(response.body)}');
+    }
 
     if (response.statusCode == 401 &&
         requiresAuth &&
         retryAfterRefresh &&
         await _refreshAccessToken()) {
-      debugPrint('[ApiClient] 401 -> retrying after token refresh');
+      if (kDebugMode) debugPrint('[ApiClient] 401 -> retrying after token refresh');
       return _request(
         method,
         path,
@@ -159,16 +165,20 @@ class ApiClient {
   }) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
 
-    debugPrint('[ApiClient] _throwForError statusCode=${response.statusCode}');
+    if (kDebugMode) {
+      debugPrint('[ApiClient] _throwForError statusCode=${response.statusCode}');
+    }
 
     if (response.statusCode == 401 && requiresAuth) {
-      debugPrint('[ApiClient] 401 -> clearing auth + onSessionExpired');
+      if (kDebugMode) debugPrint('[ApiClient] 401 -> clearing auth + onSessionExpired');
       AuthProvider.clear();
       onSessionExpired?.call();
     }
 
     final msg = _extractErrorMessage(response);
-    debugPrint('[ApiClient] throwing ApiException: $msg (status ${response.statusCode})');
+    if (kDebugMode) {
+      debugPrint('[ApiClient] throwing ApiException: $msg (status ${response.statusCode})');
+    }
 
     throw ApiException(
       msg,
@@ -225,6 +235,38 @@ class ApiClient {
   static dynamic decode(http.Response response) {
     if (response.body.trim().isEmpty) return null;
     return jsonDecode(response.body);
+  }
+
+  // Redaktuje osjetljiva polja iz JSON body-ja prije logovanja.
+  // Pokriva request body (lozinke, tokeni) i response body (access/refresh tokeni, Stripe secret).
+  static String _redactBody(String body) {
+    const sensitiveKeys = [
+      'password',
+      'currentPassword',
+      'newPassword',
+      'token',
+      'accessToken',
+      'refreshToken',
+      'clientSecret',
+      'client_secret',
+      'resetToken',
+    ];
+
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final redacted = Map<String, dynamic>.from(decoded);
+        for (final key in sensitiveKeys) {
+          if (redacted.containsKey(key)) {
+            redacted[key] = '[REDACTED]';
+          }
+        }
+        return jsonEncode(redacted);
+      }
+    } catch (_) {
+      // Not valid JSON - return body as-is
+    }
+    return body;
   }
 
   static String _extractErrorMessage(http.Response response) {

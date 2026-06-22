@@ -1,5 +1,3 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -35,6 +33,14 @@ class _AddToListSheetState extends State<_AddToListSheet> {
   bool _loading = true;
   final Set<int> _adding = {};
   final Set<int> _added = {};
+  String _selectedPriority = 'Medium';
+
+  static const _priorities = ['High', 'Medium', 'Low'];
+  static const _priorityColors = {
+    'High':   Color(0xFFE57373),
+    'Medium': Color(0xFFFFB74D),
+    'Low':    Color(0xFF81C784),
+  };
 
   @override
   void initState() {
@@ -54,7 +60,8 @@ class _AddToListSheetState extends State<_AddToListSheet> {
   Future<void> _add(int listId) async {
     setState(() => _adding.add(listId));
     try {
-      await context.read<UserListProvider>().addContent(listId, widget.contentId);
+      await context.read<UserListProvider>()
+          .addContent(listId, widget.contentId, priority: _selectedPriority);
       if (mounted) setState(() { _adding.remove(listId); _added.add(listId); });
     } catch (e) {
       if (mounted) {
@@ -106,7 +113,47 @@ class _AddToListSheetState extends State<_AddToListSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
+
+          // Priority picker
+          Row(
+            children: [
+              const Text('Priority',
+                  style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500)),
+              const SizedBox(width: 12),
+              ..._priorities.map((p) {
+                final selected = p == _selectedPriority;
+                final color = _priorityColors[p]!;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(p),
+                    selected: selected,
+                    onSelected: (_) =>
+                        setState(() => _selectedPriority = p),
+                    selectedColor: color.withOpacity(0.2),
+                    labelStyle: TextStyle(
+                      color: selected ? color : AppColors.textMuted,
+                      fontWeight: selected
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      fontSize: 13,
+                    ),
+                    side: BorderSide(
+                        color: selected ? color : AppColors.hairline),
+                    backgroundColor: AppColors.surface,
+                    showCheckmark: false,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                  ),
+                );
+              }),
+            ],
+          ),
+          const SizedBox(height: 12),
 
           if (_loading)
             const Padding(

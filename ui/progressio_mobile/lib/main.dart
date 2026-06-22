@@ -29,6 +29,7 @@ import 'package:progressio_mobile/providers/user_provider.dart';
 import 'package:progressio_mobile/screens/login_screen.dart';
 import 'package:progressio_mobile/utils/app_colors.dart';
 import 'package:progressio_mobile/providers/vote_provider.dart';
+import 'package:progressio_mobile/providers/auth_provider.dart';
 
 
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -36,6 +37,9 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+ 
+  await AuthProvider.tryRestoreSession();
 
   debugPrint('MAIN START');
 
@@ -105,7 +109,10 @@ class ProgressioApp extends StatelessWidget {
       title: 'Progressio',
       debugShowCheckedModeBanner: false,
       theme: _buildTheme(),
-     home: const LoginScreen(),
+     
+      home: AuthProvider.isLoggedIn
+          ? const HomeScreen()
+          : const LoginScreen(),
     );
   }
 

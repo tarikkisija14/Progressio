@@ -1,4 +1,3 @@
-// lib/providers/user_list_provider.dart
 import 'package:progressio_mobile/model/user_list.dart';
 import 'package:progressio_mobile/providers/base_provider.dart';
 
@@ -80,9 +79,13 @@ class UserListProvider extends BaseProvider<UserList> {
     return [];
   }
 
-  /// POST /api/lists/{id}/items  body: { contentId }
-  Future<void> addContent(int listId, int contentId) async {
-    await postRaw('lists/$listId/items', {'contentId': contentId});
+  /// POST /api/lists/{id}/items  body: { contentId, priority }
+  Future<void> addContent(int listId, int contentId,
+      {String priority = 'Medium'}) async {
+    await postRaw('lists/$listId/items', {
+      'contentId': contentId,
+      'priority': priority,
+    });
   }
 
   /// DELETE /api/lists/{id}/items/{contentId}

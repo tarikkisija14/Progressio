@@ -9,12 +9,14 @@ import 'package:progressio_desktop/model/content.dart';
 import 'package:progressio_desktop/model/content_type.dart';
 import 'package:progressio_desktop/model/genre.dart';
 import 'package:progressio_desktop/model/language.dart';
+import 'package:progressio_desktop/model/platform.dart';
 import 'package:progressio_desktop/model/search_result.dart';
 import 'package:progressio_desktop/providers/age_rating_provider.dart';
 import 'package:progressio_desktop/providers/content_provider.dart';
 import 'package:progressio_desktop/providers/content_type_provider.dart';
 import 'package:progressio_desktop/providers/genre_provider.dart';
 import 'package:progressio_desktop/providers/language_provider.dart';
+import 'package:progressio_desktop/providers/platform_provider.dart';
 import 'package:progressio_desktop/utils/app_colors.dart';
 
 class ContentFormScreen extends StatefulWidget {
@@ -33,11 +35,13 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
   late GenreProvider _genreProvider;
   late AgeRatingProvider _ageRatingProvider;
   late LanguageProvider _languageProvider;
+  late PlatformProvider _platformProvider;
 
   List<ContentType> _contentTypes = [];
   List<Genre> _genres = [];
   List<AgeRating> _ageRatings = [];
   List<Language> _languages = [];
+  List<Platform> _platforms = [];
 
   bool _loading = true;
   bool _saving = false;
@@ -58,6 +62,7 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
     _genreProvider = context.read<GenreProvider>();
     _ageRatingProvider = context.read<AgeRatingProvider>();
     _languageProvider = context.read<LanguageProvider>();
+    _platformProvider = context.read<PlatformProvider>();
 
     try {
       final results = await Future.wait([
@@ -65,12 +70,14 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
         _genreProvider.get(filter: {'pageSize': 100}),
         _ageRatingProvider.get(filter: {'pageSize': 100}),
         _languageProvider.get(filter: {'pageSize': 100}),
+        _platformProvider.get(filter: {'pageSize': 100}),
       ]);
       setState(() {
         _contentTypes = (results[0] as SearchResult<ContentType>).items ?? [];
         _genres = (results[1] as SearchResult<Genre>).items ?? [];
         _ageRatings = (results[2] as SearchResult<AgeRating>).items ?? [];
         _languages = (results[3] as SearchResult<Language>).items ?? [];
+        _platforms = (results[4] as SearchResult<Platform>).items ?? [];
         _loading = false;
       });
     } catch (e) {
@@ -88,6 +95,10 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
         'languageId': widget.content?.languageId,
         'releaseYear': widget.content?.releaseYear?.toString() ?? '',
         'isActive': widget.content?.isActive ?? true,
+        // Predselektovani zanrovi i platforme pri editu
+        'genreIds': widget.content?.genreIds ?? [],
+        'platformIds':
+            widget.content?.platforms.map((p) => p.id).toList() ?? [],
       };
 
   Future<void> _save() async {
@@ -96,12 +107,19 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
     setState(() => _saving = true);
     try {
       final values = Map<String, dynamic>.from(_formKey.currentState!.value);
+
       if (values['releaseYear'] != null &&
           values['releaseYear'].toString().isNotEmpty) {
         values['releaseYear'] = int.tryParse(values['releaseYear'].toString());
       } else {
         values['releaseYear'] = null;
       }
+
+      // FormBuilderFilterChip vraca List<int> direktno
+      values['genreIds'] =
+          (values['genreIds'] as List<dynamic>? ?? []).cast<int>();
+      values['platformIds'] =
+          (values['platformIds'] as List<dynamic>? ?? []).cast<int>();
 
       if (_isEdit) {
         await _contentProvider.update(widget.content!.id, values);
@@ -206,6 +224,10 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
               ],
             ),
             const SizedBox(height: 24),
+            _buildGenresSection(),
+            const SizedBox(height: 24),
+            _buildPlatformsSection(),
+            const SizedBox(height: 24),
             _buildActions(),
           ],
         ),
@@ -264,8 +286,7 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
               .map((t) => DropdownMenuItem(
                     value: t.id,
                     child: Text(t.name,
-                        style:
-                            const TextStyle(color: AppColors.textPrimary)),
+                        style: const TextStyle(color: AppColors.textPrimary)),
                   ))
               .toList(),
         ),
@@ -277,8 +298,7 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
               .map((a) => DropdownMenuItem(
                     value: a.id,
                     child: Text(a.name,
-                        style:
-                            const TextStyle(color: AppColors.textPrimary)),
+                        style: const TextStyle(color: AppColors.textPrimary)),
                   ))
               .toList(),
         ),
@@ -290,8 +310,7 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
               .map((l) => DropdownMenuItem(
                     value: l.id,
                     child: Text(l.name,
-                        style:
-                            const TextStyle(color: AppColors.textPrimary)),
+                        style: const TextStyle(color: AppColors.textPrimary)),
                   ))
               .toList(),
         ),
@@ -309,6 +328,72 @@ class _ContentFormScreenState extends State<ContentFormScreen> {
       ],
     );
   }
+
+  // Multi-select helper — koristi standardni Flutter FilterChip
+  // (FormBuilderFilterChip nije u flutter_form_builder ^10.x)
+  Widget _buildMultiSelect({
+    required String label,
+    required String fieldName,
+    required List<({int id, String name})> options,
+    required Color activeColor,
+  }) {
+    if (options.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(label),
+        const SizedBox(height: 12),
+        FormBuilderField<List<int>>(
+          name: fieldName,
+          initialValue: _initialValue[fieldName] as List<int>? ?? [],
+          builder: (field) {
+            final selected = field.value ?? [];
+            return Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: options.map((opt) {
+                final isSelected = selected.contains(opt.id);
+                return FilterChip(
+                  label: Text(opt.name,
+                      style: const TextStyle(color: AppColors.textPrimary)),
+                  selected: isSelected,
+                  selectedColor: activeColor.withOpacity(0.2),
+                  checkmarkColor: activeColor,
+                  backgroundColor: AppColors.input,
+                  side: BorderSide(
+                    color: isSelected ? activeColor : AppColors.border,
+                  ),
+                  onSelected: (checked) {
+                    final next = List<int>.from(selected);
+                    if (checked) {
+                      next.add(opt.id);
+                    } else {
+                      next.remove(opt.id);
+                    }
+                    field.didChange(next);
+                  },
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGenresSection() => _buildMultiSelect(
+        label: 'Genres',
+        fieldName: 'genreIds',
+        options: _genres.map((g) => (id: g.id, name: g.name)).toList(),
+        activeColor: AppColors.primary,
+      );
+
+  Widget _buildPlatformsSection() => _buildMultiSelect(
+        label: 'Available Platforms',
+        fieldName: 'platformIds',
+        options: _platforms.map((p) => (id: p.id, name: p.name)).toList(),
+        activeColor: AppColors.secondary,
+      );
 
   Widget _buildImagePreview() {
     if (_previewUrl == null || _previewUrl!.isEmpty) {

@@ -15,6 +15,8 @@ class Content {
   final bool isActive;
   final DateTime createdAt;
   final List<String> genres;
+  final List<int> genreIds;
+  final List<ContentPlatform> platforms;
 
   Content({
     this.id = 0,
@@ -33,8 +35,12 @@ class Content {
     this.isActive = true,
     DateTime? createdAt,
     List<String>? genres,
+    List<int>? genreIds,
+    List<ContentPlatform>? platforms,
   })  : createdAt = createdAt ?? DateTime.now(),
-        genres = genres ?? [];
+        genres = genres ?? [],
+        genreIds = genreIds ?? [],
+        platforms = platforms ?? [];
 
   factory Content.fromJson(Map<String, dynamic> json) {
     return Content(
@@ -58,6 +64,24 @@ class Content {
       genres: json['genres'] != null
           ? List<String>.from(json['genres'])
           : [],
+      genreIds: json['genreIds'] != null
+          ? List<int>.from(json['genreIds'])
+          : [],
+      platforms: json['platforms'] != null
+          ? (json['platforms'] as List)
+              .map((p) => ContentPlatform.fromJson(p as Map<String, dynamic>))
+              .toList()
+          : [],
     );
   }
+}
+
+class ContentPlatform {
+  final int id;
+  final String name;
+
+  ContentPlatform({required this.id, required this.name});
+
+  factory ContentPlatform.fromJson(Map<String, dynamic> json) =>
+      ContentPlatform(id: json['id'] ?? 0, name: json['name'] ?? '');
 }
