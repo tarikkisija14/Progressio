@@ -10,11 +10,7 @@ using Progressio.Model.SearchObjects;
 using Progressio.Services.Database;
 using Progressio.Services.Database.Entities;
 using Progressio.Services.Messaging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
 
 namespace Progressio.Services.Services
 {
@@ -145,9 +141,12 @@ namespace Progressio.Services.Services
                 .FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
+           
             bool hasAccess = list.IsPublic
                 || (currentUserId.HasValue && list.UserId == currentUserId.Value)
-                || (currentUserId.HasValue && list.Members.Any(m => m.UserId == currentUserId.Value));
+                || (currentUserId.HasValue
+                    && list.IsShared
+                    && list.Members.Any(m => m.UserId == currentUserId.Value));
 
             if (!hasAccess)
                 throw new ForbiddenException("You do not have access to this list.");
@@ -263,16 +262,36 @@ namespace Progressio.Services.Services
             if (!validation.IsValid)
                 throw new BusinessException(string.Join("; ", validation.Errors.Select(e => e.ErrorMessage)));
 
-            var list = await _db.UserLists.FirstOrDefaultAsync(l => l.Id == listId)
+            var list = await _db.UserLists
+                .Include(l => l.Members)
+                .Include(l => l.Invites)
+                .FirstOrDefaultAsync(l => l.Id == listId)
                 ?? throw new NotFoundException("List", listId);
 
             if (list.UserId != currentUserId)
                 throw new ForbiddenException("Only the list creator can update list settings.");
 
+            var sharingTurnedOff = list.IsShared && !request.IsShared;
+
             list.Name = request.Name;
             list.Description = request.Description;
             list.IsPublic = request.IsPublic;
             list.IsShared = request.IsShared;
+
+            
+            if (sharingTurnedOff)
+            {
+                _db.UserListMembers.RemoveRange(list.Members);
+
+                var pendingInvites = list.Invites
+                    .Where(i => i.Status == InviteStatus.Pending)
+                    .ToList();
+                _db.UserListInvites.RemoveRange(pendingInvites);
+
+                _logger.LogInformation(
+                    "Sharing disabled for list {ListId}: removed {MemberCount} members and {InviteCount} pending invites.",
+                    listId, list.Members.Count, pendingInvites.Count);
+            }
 
             await _db.SaveChangesAsync();
 
@@ -443,21 +462,34 @@ namespace Progressio.Services.Services
             if (list.Members.Any(m => m.UserId == inviteeUserId))
                 throw new BusinessException("User is already a member of this list.");
 
-            var pendingInvite = list.Invites
-                .FirstOrDefault(i => i.InviteeId == inviteeUserId && i.Status == InviteStatus.Pending);
-            if (pendingInvite is not null)
-                throw new BusinessException("A pending invite already exists for this user.");
+            
+            var existingInvite = list.Invites
+                .FirstOrDefault(i => i.InviteeId == inviteeUserId);
 
-            var invite = new UserListInvite
+            if (existingInvite is not null)
             {
-                UserListId = listId,
-                InviterId = currentUserId,
-                InviteeId = inviteeUserId,
-                Status = InviteStatus.Pending,
-                SentAt = DateTime.UtcNow
-            };
+                if (existingInvite.Status == InviteStatus.Pending)
+                    throw new BusinessException("A pending invite already exists for this user.");
 
-            _db.UserListInvites.Add(invite);
+               
+                existingInvite.Status = InviteStatus.Pending;
+                existingInvite.InviterId = currentUserId;
+                existingInvite.SentAt = DateTime.UtcNow;
+                existingInvite.RespondedAt = null;
+            }
+            else
+            {
+                var invite = new UserListInvite
+                {
+                    UserListId = listId,
+                    InviterId = currentUserId,
+                    InviteeId = inviteeUserId,
+                    Status = InviteStatus.Pending,
+                    SentAt = DateTime.UtcNow
+                };
+                _db.UserListInvites.Add(invite);
+            }
+
             await _db.SaveChangesAsync();
 
             var inviter = await _db.Users.FirstOrDefaultAsync(u => u.Id == currentUserId);

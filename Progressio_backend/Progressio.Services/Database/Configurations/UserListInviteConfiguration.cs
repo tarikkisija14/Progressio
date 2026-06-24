@@ -10,7 +10,8 @@ public class UserListInviteConfiguration : IEntityTypeConfiguration<UserListInvi
     {
         builder.HasKey(x => x.Id);
 
-        builder.HasIndex(x => new { x.UserListId, x.InviteeId }).IsUnique();
+       
+        builder.HasIndex(x => new { x.UserListId, x.InviteeId, x.Status });
 
         builder.Property(x => x.Status)
             .HasConversion<string>()
