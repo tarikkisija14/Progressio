@@ -160,6 +160,7 @@ class _CountryScreenState extends State<CountryScreen> {
                 } else {
                   await _countryProvider.update(country.id, values);
                 }
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(country == null
                       ? 'Country created.'
@@ -233,6 +234,7 @@ class _CountryScreenState extends State<CountryScreen> {
                 } else {
                   await _cityProvider.update(city.id, values);
                 }
+                if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text(
                       city == null ? 'City created.' : 'City updated.'),
@@ -252,8 +254,10 @@ class _CountryScreenState extends State<CountryScreen> {
 
   Future<void> _deleteCountry(Country country) async {
     if (!await showDeleteConfirmation(context, itemName: country.name)) return;
+    if (!mounted) return;
     try {
       await _countryProvider.delete(country.id);
+      if (!mounted) return;
       if (_selectedCountry?.id == country.id) {
         setState(() {
           _selectedCountry = null;
@@ -273,8 +277,10 @@ class _CountryScreenState extends State<CountryScreen> {
 
   Future<void> _deleteCity(City city) async {
     if (!await showDeleteConfirmation(context, itemName: city.name)) return;
+    if (!mounted) return;
     try {
       await _cityProvider.delete(city.id);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('City deleted.'),

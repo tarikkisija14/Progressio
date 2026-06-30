@@ -25,7 +25,6 @@ using Progressio.Services.Database.Entities;
 using Progressio.Services.Security;
 using Progressio.Services.Services;
 using Progressio.Services.Services.Validators;
-using Progressio.WebApi.Filters;
 using Progressio.WebApi.Hubs;
 using Progressio.WebApi.Infrastructure;
 using Progressio.WebApi.Middleware;
@@ -271,8 +270,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
-builder.Services.AddControllers(options =>
-    options.Filters.Add<AppExceptionFilter>());
+builder.Services.AddControllers();
 // ─── SignalR ──────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR();
 

@@ -10,5 +10,7 @@ namespace Progressio.Services.Services
     public interface IRecommenderService
     {
         Task<IReadOnlyList<RecommendationResponse>> GetRecommendationsAsync(int userId, int count = 20);
+        Task RegisterClickAsync(int userId, int contentId);
+        Task RegisterProgressStartedAsync(int userId, int contentId);
     }
 }

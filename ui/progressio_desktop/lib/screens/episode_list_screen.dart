@@ -187,8 +187,10 @@ class _EpisodeListScreenState extends State<EpisodeListScreen> {
 
   Future<void> _deleteEpisode(Episode episode) async {
     if (!await showDeleteConfirmation(context, itemName: episode.title)) return;
+    if (!mounted) return;
     try {
       await _episodeProvider.delete(episode.id);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Episode deleted.'),

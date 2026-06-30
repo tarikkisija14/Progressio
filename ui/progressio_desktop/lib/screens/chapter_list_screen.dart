@@ -198,8 +198,10 @@ class _ChapterListScreenState extends State<ChapterListScreen> {
   )) {
     return;
   }
+  if (!mounted) return;
   try {
     await _chapterProvider.delete(chapter.id);
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
           content: Text('Chapter deleted.'),

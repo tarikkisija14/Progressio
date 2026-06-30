@@ -209,8 +209,10 @@ void initState() {
 
   Future<void> _deleteCharacter(Character character) async {
     if (!await showDeleteConfirmation(context, itemName: character.name)) return;
+    if (!mounted) return;
     try {
       await _characterProvider.delete(character.id);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Character deleted.'),

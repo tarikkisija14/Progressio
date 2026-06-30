@@ -28,6 +28,7 @@ namespace Progressio.Services.Services
         private readonly IValidator<CreatePaymentIntentRequest> _createIntentValidator;
         private readonly IValidator<RefundRequest> _refundValidator;
         private readonly IRabbitMqPublisher _publisher;
+        private readonly IStatisticsService _statisticsService;
 
         private const string NotificationsQueue = "send_notification";
 
@@ -43,7 +44,8 @@ namespace Progressio.Services.Services
        ILogger<PaymentService> logger,
        IValidator<CreatePaymentIntentRequest> createIntentValidator,
        IValidator<RefundRequest> refundValidator,
-       IRabbitMqPublisher publisher)
+       IRabbitMqPublisher publisher,
+       IStatisticsService statisticsService)
         {
             _db = db;
             _webhookSecret = config.GetRequiredValue("Stripe:WebhookSecret");
@@ -51,6 +53,7 @@ namespace Progressio.Services.Services
             _createIntentValidator = createIntentValidator;
             _refundValidator = refundValidator;
             _publisher = publisher;
+            _statisticsService = statisticsService;
         }
 
         public async Task<PaymentIntentResponse> CreatePaymentIntentAsync(int userId, CreatePaymentIntentRequest request)
@@ -271,6 +274,8 @@ namespace Progressio.Services.Services
                 _logger.LogWarning(ex,
                     "Payment {PaymentId} finalized but notification publish failed.", payment.Id);
             }
+
+            await InvalidateStatsCacheSafeAsync(payment.UserId);
         }
 
         private async Task MarkPaymentFailedAsync(PaymentIntent intent)
@@ -356,6 +361,8 @@ namespace Progressio.Services.Services
                     "Payment {PaymentId} refunded but notification publish failed.", payment.Id);
             }
 
+            await InvalidateStatsCacheSafeAsync(payment.UserId);
+
             return MapToPaymentResponse(payment);
         }
 
@@ -417,6 +424,20 @@ namespace Progressio.Services.Services
             RefundedAt = payment.RefundedAt,
             RefundedAmount = payment.RefundedAmount
         };
+
+        
+        private async Task InvalidateStatsCacheSafeAsync(int userId)
+        {
+            try
+            {
+                await _statisticsService.InvalidateCacheAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to invalidate stats cache for User {UserId}.", userId);
+            }
+        }
     }
 
 

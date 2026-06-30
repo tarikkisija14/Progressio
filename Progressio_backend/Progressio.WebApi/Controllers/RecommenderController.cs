@@ -31,5 +31,12 @@ namespace Progressio.WebApi.Controllers
             var result = await _recommenderService.GetRecommendationsAsync(_currentUser.UserId, count);
             return Ok(result);
         }
+
+        [HttpPost("api/recommendations/{contentId:int}/click")]
+        public async Task<IActionResult> RegisterClick(int contentId)
+        {
+            await _recommenderService.RegisterClickAsync(_currentUser.UserId, contentId);
+            return NoContent();
+        }
     }
 }

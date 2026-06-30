@@ -263,6 +263,9 @@ namespace Progressio.Services.Services
 
         public async Task<WrappedResponse> GetWrappedAsync(int userId, int year)
         {
+            if (!await IsPremiumAsync(userId))
+                throw new ForbiddenException("This feature requires a Premium subscription.");
+
             var yearStart = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
             var yearEnd = new DateTime(year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 

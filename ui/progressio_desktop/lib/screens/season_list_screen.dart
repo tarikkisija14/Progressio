@@ -180,8 +180,10 @@ class _SeasonListScreenState extends State<SeasonListScreen> {
 
   Future<void> _deleteSeason(Season season) async {
     if (!await showDeleteConfirmation(context, itemName: 'Season ${season.seasonNumber}')) return;
+    if (!mounted) return;
     try {
       await _seasonProvider.delete(season.id);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Season deleted.'),

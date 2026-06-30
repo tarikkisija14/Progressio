@@ -33,7 +33,7 @@ namespace Progressio.Services.Services
 
         public async Task<IReadOnlyList<RecommendationResponse>> GetRecommendationsAsync(int userId, int count = 20)
         {
-            
+
             bool isPremium = await IsPremiumAsync(userId);
 
             if (!isPremium)
@@ -288,7 +288,7 @@ namespace Progressio.Services.Services
                 }
                 catch (JsonException)
                 {
-                    // skip malformed rows
+                    
                 }
             }
 
@@ -364,7 +364,7 @@ namespace Progressio.Services.Services
                 return 1.0;
 
             double avg = sum / matched;
-           
+
             return 0.5 + avg;
         }
 
@@ -374,7 +374,7 @@ namespace Progressio.Services.Services
                 return 0.0;
 
             double raw = avgRating * Math.Log(totalRatings + 1);
-           
+
             return Math.Min(raw / 50.0, 1.0);
         }
 
@@ -387,7 +387,7 @@ namespace Progressio.Services.Services
             if (age <= 0)
                 return 1.0;
 
-          
+
             return Math.Max(Math.Pow(0.9, age), 0.1);
         }
 
@@ -403,7 +403,7 @@ namespace Progressio.Services.Services
            Dictionary<int, double> completionRateByGenre,
            HashSet<int> contentGenreIds)
         {
-           
+
             int dominantIndex = 0;
             double maxContrib = signalContributions[0];
             for (int i = 1; i < signalContributions.Length; i++)
@@ -467,6 +467,67 @@ namespace Progressio.Services.Services
             {
                 _logger.LogWarning(ex, "RecommenderService: failed to persist RecommendationLog for User {UserId}", userId);
             }
+        }
+
+        public async Task RegisterClickAsync(int userId, int contentId)
+        {
+            var log = await GetLatestUnconsumedLogAsync(userId, contentId, l => l.ClickedAt == null);
+            if (log is null)
+            {
+                _logger.LogWarning(
+                    "RecommenderService: no pending RecommendationLog found to register click. UserId={UserId}, ContentId={ContentId}",
+                    userId, contentId);
+                return;
+            }
+
+            log.ClickedAt = DateTime.UtcNow;
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "RecommenderService: failed to persist click for RecommendationLog {LogId}, User {UserId}", log.Id, userId);
+            }
+        }
+
+        public async Task RegisterProgressStartedAsync(int userId, int contentId)
+        {
+            var log = await GetLatestUnconsumedLogAsync(userId, contentId, l => l.ProgressStartedAt == null);
+            if (log is null)
+            {
+               
+                return;
+            }
+
+            log.ProgressStartedAt = DateTime.UtcNow;
+            if (log.ClickedAt is null)
+                log.ClickedAt = log.ProgressStartedAt;
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "RecommenderService: failed to persist progress start for RecommendationLog {LogId}, User {UserId}", log.Id, userId);
+            }
+        }
+
+        private async Task<RecommendationLog?> GetLatestUnconsumedLogAsync(
+            int userId,
+            int contentId,
+            Func<RecommendationLog, bool> notYetSet)
+        {
+            var candidates = await _db.RecommendationLogs
+                .Where(l => l.UserId == userId && l.ContentId == contentId)
+                .OrderByDescending(l => l.ShownAt)
+                .ToListAsync();
+
+            return candidates.FirstOrDefault(notYetSet);
         }
 
         private async Task<bool> IsPremiumAsync(int userId)

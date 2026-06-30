@@ -23,6 +23,8 @@ namespace Progressio.Services.Services
         private readonly IValidator<ChangeStatusRequest> _changeStatusValidator;
         private readonly IValidator<MarkEpisodeRequest> _markEpisodeValidator;
         private readonly IValidator<MarkChapterRequest> _markChapterValidator;
+        private readonly IStatisticsService _statisticsService;
+        private readonly IRecommenderService _recommenderService;
 
         private const string AchievementsQueue = "check_achievements";
         private const string NotificationsQueue = "send_notification";
@@ -35,7 +37,9 @@ namespace Progressio.Services.Services
             IValidator<StartProgressRequest> startValidator,
             IValidator<ChangeStatusRequest> changeStatusValidator,
             IValidator<MarkEpisodeRequest> markEpisodeValidator,
-            IValidator<MarkChapterRequest> markChapterValidator)
+            IValidator<MarkChapterRequest> markChapterValidator,
+            IStatisticsService statisticsService,
+            IRecommenderService recommenderService)
         {
             _db = db;
             _stateMachine = stateMachine;
@@ -45,6 +49,8 @@ namespace Progressio.Services.Services
             _changeStatusValidator = changeStatusValidator;
             _markEpisodeValidator = markEpisodeValidator;
             _markChapterValidator = markChapterValidator;
+            _statisticsService = statisticsService;
+            _recommenderService = recommenderService;
         }
 
         public async Task<ProgressResponse> StartProgressAsync(int userId, StartProgressRequest request)
@@ -70,16 +76,13 @@ namespace Progressio.Services.Services
 
             if (existing is not null)
             {
-                if (existing.Status == ProgressStatus.Completed || existing.Status == ProgressStatus.Cancelled)
-                    throw new BusinessException(
-                        $"Cannot restart progress that is already '{existing.Status}'. " +
-                        "Completed and Cancelled are terminal states.");
-
-                if (existing.Status != ProgressStatus.InProgress)
+                if (existing.Status == ProgressStatus.Cancelled || existing.Status == ProgressStatus.Completed)
                 {
                     _stateMachine.Transition(existing, ProgressStatus.InProgress, userId);
                     await _db.SaveChangesAsync();
                 }
+
+                await RegisterRecommendationProgressStartSafeAsync(userId, request.ContentId);
 
                 return BuildProgressResponse(existing);
             }
@@ -116,7 +119,25 @@ namespace Progressio.Services.Services
                     request.ContentId);
             }
 
+            await RegisterRecommendationProgressStartSafeAsync(userId, request.ContentId);
+
             return await BuildProgressResponseAsync(progress, content);
+        }
+
+        // Povezuje StartProgressAsync sa RecommendationLog-om: ako je sadržaj pokrenut
+        // iz preporuke (ima RecommendationLog red bez ProgressStartedAt), upisuje timestamp.
+        // Failure se samo loguje, isti pattern kao InvalidateStatsCacheSafeAsync.
+        private async Task RegisterRecommendationProgressStartSafeAsync(int userId, int contentId)
+        {
+            try
+            {
+                await _recommenderService.RegisterProgressStartedAsync(userId, contentId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to register recommendation progress-start for User {UserId}, Content {ContentId}.", userId, contentId);
+            }
         }
 
         public async Task<ProgressResponse> ChangeStatusAsync(int userId, int progressId, ChangeStatusRequest request)
@@ -160,6 +181,8 @@ namespace Progressio.Services.Services
                     userId,
                     progressId);
             }
+
+            await InvalidateStatsCacheSafeAsync(userId);
 
             return BuildProgressResponse(progress);
         }
@@ -222,8 +245,11 @@ namespace Progressio.Services.Services
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only update your own progress.");
 
-            if (progress.Status == ProgressStatus.Cancelled || progress.Status == ProgressStatus.Completed)
-                throw new BusinessException($"Cannot mark episode on progress with status '{progress.Status}'. Completed and Cancelled are terminal states.");
+            if (progress.Status == ProgressStatus.Cancelled)
+                throw new BusinessException($"Cannot mark episode on progress with status '{progress.Status}'.");
+
+            if (progress.Status == ProgressStatus.Completed && request.IsWatched)
+                _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
 
             var episode = await _db.Episodes
                 .Include(e => e.Season)
@@ -282,6 +308,8 @@ namespace Progressio.Services.Services
                     progressId,
                     request.EpisodeId);
             }
+
+            await InvalidateStatsCacheSafeAsync(userId);
 
             return MapEpisodeProgress(ep, episode);
         }
@@ -351,8 +379,11 @@ namespace Progressio.Services.Services
             if (progress.UserId != userId)
                 throw new ForbiddenException("You can only update your own progress.");
 
-            if (progress.Status == ProgressStatus.Cancelled || progress.Status == ProgressStatus.Completed)
-                throw new BusinessException($"Cannot mark chapter on progress with status '{progress.Status}'. Completed and Cancelled are terminal states.");
+            if (progress.Status == ProgressStatus.Cancelled)
+                throw new BusinessException($"Cannot mark chapter on progress with status '{progress.Status}'.");
+
+            if (progress.Status == ProgressStatus.Completed && request.IsRead)
+                _stateMachine.Transition(progress, ProgressStatus.InProgress, userId);
 
             var chapter = await _db.Chapters
                 .FirstOrDefaultAsync(c => c.Id == request.ChapterId && c.ContentId == progress.ContentId)
@@ -410,6 +441,8 @@ namespace Progressio.Services.Services
                     progressId,
                     request.ChapterId);
             }
+
+            await InvalidateStatsCacheSafeAsync(userId);
 
             return MapChapterProgress(cp, chapter);
         }
@@ -554,6 +587,23 @@ namespace Progressio.Services.Services
                 NotificationType = "StatusChange",
                 RelatedEntityId = progress.ContentId
             });
+        }
+
+        // Invalidira keshiranu statistiku korisnika nakon promjene progressa.
+        // Bez ovoga StatsResponse/PremiumStatsResponse/WrappedResponse ostaju stari
+        // do isteka CacheTtl, iako su podaci promijenjeni.
+        // Failure ovdje ne smije srusiti glavnu operaciju (isto kao achievement publish).
+        private async Task InvalidateStatsCacheSafeAsync(int userId)
+        {
+            try
+            {
+                await _statisticsService.InvalidateCacheAsync(userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to invalidate stats cache for User {UserId}.", userId);
+            }
         }
 
         private static ProgressResponse BuildProgressResponse(UserContentProgress p)
